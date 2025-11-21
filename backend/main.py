@@ -5,7 +5,8 @@ import re
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter
+
+import logging
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +27,33 @@ PLEX_TOKEN = os.getenv("PLEX_TOKEN", "")
 PLEX_MOVIE_LIB_ID = os.getenv("PLEX_MOVIE_LIB_ID", "1")
 
 OUTPUT_ROOT = os.getenv("OUTPUT_ROOT", "/poster-outputs")
+PRESETS_PATH = os.path.join(os.path.dirname(__file__), "presets.json")
+LOG_FILE = os.getenv("LOG_FILE", "/config/simposter.log")
+CONFIG_DIR = os.getenv("CONFIG_DIR", "/config")
+DEFAULT_PRESETS_PATH = os.path.join(os.path.dirname(__file__), "presets.json")
+USER_PRESETS_PATH = os.path.join(CONFIG_DIR, "presets.json")
+
+
+
+
+# ---------------- Logging ----------------
+
+logger = logging.getLogger("simposter")
+logger.setLevel(logging.INFO)
+
+if not logger.handlers:
+    log_dir = os.path.dirname(LOG_FILE) or "/config"
+    os.makedirs(log_dir, exist_ok=True)
+
+    fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    sh = logging.StreamHandler()
+
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    fh.setFormatter(fmt)
+    sh.setFormatter(fmt)
+
+    logger.addHandler(fh)
+    logger.addHandler(sh)
 
 # ---------------- FastAPI ----------------
 
@@ -48,10 +76,35 @@ def serve_index():
     with open(index_path, "r", encoding="utf-8") as f:
         return f.read()
 
+
 def load_presets():
-    path = os.path.join(os.path.dirname(__file__), "presets.json")
-    with open(path, "r", encoding="utf-8") as f:
+    """
+    Load presets, preferring user-editable /config/presets.json.
+    On first run, if /config/presets.json doesn't exist, copy the
+    bundled defaults from backend/presets.json into /config.
+    """
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+
+    # First-run: copy defaults into /config if missing
+    if not os.path.exists(USER_PRESETS_PATH):
+        try:
+            with open(DEFAULT_PRESETS_PATH, "r", encoding="utf-8") as f:
+                default_data = json.load(f)
+        except FileNotFoundError:
+            # Absolute worst case: no bundled presets either
+            default_data = {"default": {"presets": []}}
+
+        with open(USER_PRESETS_PATH, "w", encoding="utf-8") as f:
+            json.dump(default_data, f, indent=2)
+
+        return default_data
+
+    # Normal run – just read from /config
+    with open(USER_PRESETS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+
 
 
 # ---------------- Data Models ----------------
@@ -76,24 +129,32 @@ class PreviewRequest(BaseModel):
 class SaveRequest(PreviewRequest):
     movie_title: str
     movie_year: Optional[int] = None
-    filename: Optional[str] = "poster.jpg"
+    filename: Optional[str] = "poster.jpg"  # kept for compatibility; we override
+
 
 class PresetSaveRequest(BaseModel):
     preset_id: str
     options: Dict[str, Any]
 
-class PlexUploadRequest(BaseModel):
-    rating_key: str
-    background_url: str
-    logo_url: Optional[str] = None
-    options: Optional[Dict[str, Any]] = None
-    filename: Optional[str] = "poster.jpg"
 
+class PlexSendRequest(PreviewRequest):
+    rating_key: str
+    labels: Optional[List[str]] = None
+
+
+class LabelsResponse(BaseModel):
+    labels: List[str]
+
+
+class LabelsRemoveRequest(BaseModel):
+    labels: List[str]
 
 
 # ---------------- Helpers ----------------
 
 def _plex_headers() -> Dict[str, str]:
+    if not PLEX_TOKEN:
+        return {}
     return {"X-Plex-Token": PLEX_TOKEN}
 
 
@@ -111,9 +172,8 @@ def _get_plex_movies() -> List[Movie]:
         year = video.get("year")
         movies.append(Movie(key=key, title=title, year=int(year) if year else None))
 
-    # You mentioned preferring most-recent first; Plex returns newest last,
-    # so we reverse to show most recently added at the top.
-    movies.reverse()
+    # Show most recently added at the top.
+    #movies.reverse()
     return movies
 
 
@@ -135,6 +195,22 @@ def extract_tmdb_id_from_metadata(xml_text: str) -> Optional[int]:
     return None
 
 
+def _extract_labels_from_metadata(xml_text: str) -> List[str]:
+    labels: List[str] = []
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return labels
+
+    for tag in root.findall(".//Tag"):
+        tag_type = tag.get("tagType") or tag.get("type") or ""
+        if tag_type.lower() == "label":
+            name = tag.get("tag") or ""
+            if name and name not in labels:
+                labels.append(name)
+    return labels
+
+
 def get_movie_tmdb_id(rating_key: str) -> Optional[int]:
     url = f"{PLEX_URL}/library/metadata/{rating_key}"
     r = requests.get(url, headers=_plex_headers(), timeout=10)
@@ -144,27 +220,29 @@ def get_movie_tmdb_id(rating_key: str) -> Optional[int]:
 
 def _download_image(url: str) -> Optional[Image.Image]:
     try:
-        r = requests.get(url, timeout=12, allow_redirects=True)
+        r = requests.get(url, timeout=10)
         r.raise_for_status()
 
-        data = BytesIO(r.content)
+        img = Image.open(BytesIO(r.content))
+        img.load()
+        return img
 
-        # Try WebP → JPG conversion if needed
-        try:
-            img = Image.open(data)
-            img.load()
-        except Exception:
-            # sometimes TMDb returns weird headers
-            return None
-
-        # Always convert to RGBA for safe processing
-        return img.convert("RGBA")
-
-    except Exception as e:
-        print(f"[WARN] Failed to load image: {url} → {e}")
+    except Exception:
+        logger.warning("[WARN] Failed to load image: %s", url)
         return None
 
 
+def _remove_label(rating_key: str, label: str) -> None:
+    if not label:
+        return
+    try:
+        url = f"{PLEX_URL}/library/metadata/{rating_key}/labels"
+        params = {"tag.tag": label, "tag.type": "label"}
+        r = requests.delete(url, headers=_plex_headers(), params=params, timeout=10)
+        r.raise_for_status()
+        logger.info("Removed label '%s' from ratingKey=%s", label, rating_key)
+    except Exception:
+        logger.exception("Failed to remove label '%s' for ratingKey=%s", label, rating_key)
 
 
 # ---------------- API Routes ----------------
@@ -172,17 +250,47 @@ def _download_image(url: str) -> Optional[Image.Image]:
 @app.get("/api/templates")
 def api_templates():
     """
-    Returns template groups + presets from presets.json:
-    [
-      { id, name, description, presets: [ {id, name, options}, ... ] },
-      ...
-    ]
+    Returns template groups from templates/__init__.py.
     """
     return list_templates()
+
 
 @app.get("/api/presets")
 def api_presets():
     return load_presets()
+
+
+@app.post("/api/presets/save")
+def api_save_preset(req: PresetSaveRequest):
+    preset_id = req.preset_id
+    options = req.options
+
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+
+    try:
+        with open(USER_PRESETS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        data = {"default": {"presets": []}}
+
+    presets = data.setdefault("default", {}).setdefault("presets", [])
+
+    # overwrite existing if found
+    existing = next((p for p in presets if p.get("id") == preset_id), None)
+    if existing:
+        existing["options"] = options
+    else:
+        presets.append({
+            "id": preset_id,
+            "name": preset_id,
+            "options": options
+        })
+
+    with open(USER_PRESETS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+    return {"message": f"Preset '{preset_id}' saved."}
+
 
 @app.get("/api/movies", response_model=List[Movie])
 def api_movies():
@@ -193,6 +301,43 @@ def api_movies():
 def api_movie_tmdb(rating_key: str):
     tmdb_id = get_movie_tmdb_id(rating_key)
     return MovieTMDbResponse(tmdb_id=tmdb_id)
+
+
+@app.get("/api/movie/{rating_key}/labels")
+def api_movie_labels(rating_key: str):
+    url = f"{PLEX_URL}/library/metadata/{rating_key}"
+    r = requests.get(url, headers=_plex_headers(), timeout=10)
+    r.raise_for_status()
+
+    try:
+        root = ET.fromstring(r.text)
+    except:
+        return {"labels": []}
+
+    labels = set()
+
+    # ----- CASE A: Modern Plex (Tag tagType="label") -----
+    for tag in root.findall(".//Tag"):
+        tag_type = (tag.get("tagType") or tag.get("type") or "").lower()
+        if tag_type == "label":
+            name = tag.get("tag")
+            if name:
+                labels.add(name)
+
+    # ----- CASE B: Some versions use <Label tag="..."> -----
+    for tag in root.findall(".//Label"):
+        name = tag.get("tag")
+        if name:
+            labels.add(name)
+
+    return {"labels": sorted(labels)}
+
+
+@app.post("/api/movie/{rating_key}/labels/remove")
+def api_movie_labels_remove(rating_key: str, req: LabelsRemoveRequest):
+    for label in req.labels:
+        _remove_label(rating_key, label)
+    return {"status": "ok", "removed": req.labels}
 
 
 @app.get("/api/tmdb/{tmdb_id}/images")
@@ -206,6 +351,9 @@ def api_tmdb_images(tmdb_id: int):
 @app.post("/api/preview")
 def api_preview(req: PreviewRequest):
     bg = _download_image(req.background_url)
+    if bg is None:
+        raise HTTPException(status_code=400, detail="Invalid background image.")
+
     logo = _download_image(req.logo_url) if req.logo_url else None
 
     renderer = get_renderer(req.template_id)
@@ -213,88 +361,134 @@ def api_preview(req: PreviewRequest):
 
     buf = BytesIO()
     img.convert("RGB").save(buf, "JPEG", quality=95)
+    logger.info("Preview rendered for template=%s", req.template_id)
     return {"image_base64": base64.b64encode(buf.getvalue()).decode()}
+
+
+@app.get("/api/movie/{rating_key}/poster")
+def api_movie_poster(rating_key: str):
+    """
+    Returns the directly resolvable poster URL from Plex.
+    Works across all Plex versions.
+    """
+
+    # Direct endpoint for artwork
+    direct = f"{PLEX_URL}/library/metadata/{rating_key}/thumb?X-Plex-Token={PLEX_TOKEN}"
+
+    # Validate that the URL exists
+    try:
+        r = requests.get(direct, timeout=5)
+        if r.status_code == 200 and r.content:
+            return {"url": direct}
+    except:
+        pass
+
+    # Fallback: parse metadata XML
+    try:
+        meta_url = f"{PLEX_URL}/library/metadata/{rating_key}"
+        r = requests.get(meta_url, headers=_plex_headers(), timeout=10)
+        r.raise_for_status()
+
+        root = ET.fromstring(r.text)
+
+        # The <Video> element has the actual thumb attribute
+        for video in root.findall(".//Video"):
+            thumb = video.get("thumb")
+            if thumb:
+                return {
+                    "url": f"{PLEX_URL}{thumb}?X-Plex-Token={PLEX_TOKEN}"
+                }
+    except:
+        pass
+
+    return {"url": None}
+
 
 
 @app.post("/api/save")
 def api_save(req: SaveRequest):
-    bg = _download_image(req.background_url)
-    logo = _download_image(req.logo_url) if req.logo_url else None
-
-    renderer = get_renderer(req.template_id)
-    img = renderer(bg, logo, req.options or {})
-
-    # Folder name: "Movie Title (Year)" or just title
-    folder = f"{req.movie_title} ({req.movie_year})" if req.movie_year else req.movie_title
-    folder = "".join(c for c in folder if c.isalnum() or c in " _-()")
-    out_dir = os.path.join(OUTPUT_ROOT, folder)
-    os.makedirs(out_dir, exist_ok=True)
-
-    out_path = os.path.join(out_dir, req.filename or "poster.jpg")
-    img.convert("RGB").save(out_path, "JPEG", quality=95)
-    return {"status": "ok", "path": out_path}
-    
-
-
-
-@app.post("/api/send_to_plex")
-def api_send_to_plex(req: PlexUploadRequest):
     bg = _download_image(req.background_url)
     if bg is None:
         raise HTTPException(status_code=400, detail="Invalid background image.")
 
     logo = _download_image(req.logo_url) if req.logo_url else None
 
-    renderer = get_renderer("default")
+    renderer = get_renderer(req.template_id)
+    img = renderer(bg, logo, req.options or {})
+
+    # Folder name: "Movie Title (Year)" or just title
+    if req.movie_year:
+        folder_name = f"{req.movie_title} ({req.movie_year})"
+    else:
+        folder_name = req.movie_title
+
+    # sanitize filename / folder
+    safe_folder = "".join(c for c in folder_name if c.isalnum() or c in " _-()")
+    out_dir = os.path.join(OUTPUT_ROOT, safe_folder)
+    os.makedirs(out_dir, exist_ok=True)
+
+    out_filename = f"{safe_folder}.jpg"
+    out_path = os.path.join(out_dir, out_filename)
+
+    img.convert("RGB").save(out_path, "JPEG", quality=95)
+    logger.info("Saved poster to %s", out_path)
+    return {"status": "ok", "path": out_path}
+
+
+@app.post("/api/plex/send")
+def api_plex_send(req: PlexSendRequest):
+    if not PLEX_URL or not PLEX_TOKEN:
+        raise HTTPException(status_code=400, detail="PLEX_URL and PLEX_TOKEN must be configured.")
+
+    bg = _download_image(req.background_url)
+    if bg is None:
+        raise HTTPException(status_code=400, detail="Invalid background image.")
+
+    logo = _download_image(req.logo_url) if req.logo_url else None
+
+    renderer = get_renderer(req.template_id)
     img = renderer(bg, logo, req.options or {})
 
     buf = BytesIO()
     img.convert("RGB").save(buf, "JPEG", quality=95)
-    payload = buf.getvalue()
+    buf.seek(0)
 
-    # Upload as LOCAL POSTER
-    upload_url = f"{PLEX_URL}/library/metadata/{req.rating_key}/posters"
-    headers = {
-        "X-Plex-Token": PLEX_TOKEN,
-        "Content-Type": "image/jpeg"
-    }
-
-    r = requests.post(upload_url, headers=headers, data=payload)
-    if r.status_code not in (200, 201, 204):
-        raise HTTPException(status_code=500, detail=f"Plex upload failed: {r.text}")
-    # ---------------------------
-    # Remove Plex label "overlay"
-    # ---------------------------
-    remove_label_url = f"{PLEX_URL}/library/metadata/{req.rating_key}?label[0].tag.overlay="
-    requests.put(remove_label_url, headers={"X-Plex-Token": PLEX_TOKEN})
-    return {"status": "ok", "message": "Poster sent to Plex."}
-
-@app.post("/api/presets/save")
-def api_save_preset(req: PresetSaveRequest):
-    preset_id = req.preset_id
-    options = req.options
-
+    url = f"{PLEX_URL}/library/metadata/{req.rating_key}/posters"
     try:
-        with open("backend/presets.json", "r", encoding="utf-8") as f:
-            data = json.load(f)
+        r = requests.post(
+            url,
+            headers=_plex_headers(),
+            files={"file": ("poster.jpg", buf, "image/jpeg")},
+            timeout=20,
+        )
+        r.raise_for_status()
+    except Exception:
+        logger.exception("Failed to send poster to Plex for ratingKey=%s", req.rating_key)
+        raise HTTPException(status_code=500, detail="Failed to send poster to Plex.")
+
+    labels = req.labels or []
+    for label in labels:
+        _remove_label(req.rating_key, label)
+
+    logger.info(
+        "Sent poster to Plex for ratingKey=%s (removed labels: %s)",
+        req.rating_key,
+        ", ".join(labels) if labels else "none",
+    )
+    return {"status": "ok"}
+
+
+@app.get("/api/logs")
+def api_logs():
+    """
+    Return the last ~500 lines of the Simposter log file so the UI
+    can display them.
+    """
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
     except FileNotFoundError:
-        data = {"default": {"presets": []}}
+        return {"text": ""}
 
-    presets = data.setdefault("default", {}).setdefault("presets", [])
-
-    # overwrite existing if found
-    existing = next((p for p in presets if p["id"] == preset_id), None)
-
-    if existing:
-        existing["options"] = options
-    else:
-        presets.append({
-            "id": preset_id,
-            "name": preset_id,
-            "options": options
-        })
-
-    with open("backend/presets.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-
-    return {"message": f"Preset '{preset_id}' saved."}
+    tail = lines[-500:]
+    return {"text": "".join(tail)}
