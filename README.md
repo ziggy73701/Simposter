@@ -228,10 +228,6 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ---
 
 
-## 🤝 Contributing
-
-PRs welcome — even tiny improvements to UI, presets, docs, or renderer.
-
 ---
 
 ## 📜 License
