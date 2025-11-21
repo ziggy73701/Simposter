@@ -227,11 +227,6 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
-## 📷 Screenshots
-
-(*Place your UI images here — Editor / Poster Strips / JSON Tools / Send-to-Plex view.*)
-
----
 
 ## 🤝 Contributing
 
