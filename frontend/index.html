@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Poster Maker</title>
+  <style>
+    body { margin:0; background:#111; color:#eee; font-family:system-ui,sans-serif; }
+    .wrap { display:flex; padding:16px; gap:16px; height:100vh; box-sizing:border-box; }
+    .controls { width:380px; background:#181818; padding:16px; border-radius:8px; overflow-y:auto; }
+    .preview { flex:1; display:flex; justify-content:center; align-items:center; overflow:auto; padding:10px; }
+    #previewImg { max-height:90vh; width:auto; cursor:ns-resize; user-select:none; box-shadow:0 0 40px rgba(0,0,0,0.6); border-radius:8px; background:#000; }
+
+    select, input[type="text"], input[type="range"], button, textarea {
+      width:100%; margin-top:4px; box-sizing:border-box;
+    }
+    label { display:block; margin-top:12px; font-size:14px; }
+    textarea {
+      background:#111; color:#eee; border-radius:4px;
+      min-height:80px; font-size:11px; border:1px solid #333; padding:6px;
+    }
+    hr { border:0; border-top:1px solid #333; margin:12px 0; }
+
+    .slider-row { display:flex; justify-content:space-between; align-items:center; }
+    .slider-value { min-width:42px; text-align:right; font-size:12px; color:#aaa; padding-left:6px; }
+
+    .thumb-strip { display:flex; gap:6px; overflow-x:auto; padding:6px 0; margin-top:4px; }
+    .thumb { flex:0 0 auto; width:70px; border-radius:4px; cursor:pointer;
+             border:2px solid transparent; transition:0.15s; }
+    .thumb:hover { transform:translateY(-2px); border-color:#555; }
+    .thumb.selected { border-color:#00b3ff; }
+
+    .thumb-actions { display:flex; gap:8px; margin-top:4px; }
+    .thumb-actions button { flex:1; font-size:12px; padding:6px; }
+
+    button { background:#2a7be4; border:none; color:#fff; padding:8px;
+             border-radius:4px; font-size:14px; cursor:pointer; }
+    button:hover { background:#3b8df2; }
+    button.secondary { background:#333; }
+    button.secondary:hover { background:#444; }
+
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.8);
+                      display:none; align-items:center; justify-content:center; z-index:999; }
+    .modal-backdrop.show { display:flex; }
+    .modal { background:#181818; border-radius:8px; padding:16px;
+             max-width:90vw; max-height:90vh; overflow:auto; box-shadow:0 0 40px rgba(0,0,0,0.9); }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .modal-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px; }
+    .modal-thumb { width:100%; border-radius:6px; cursor:pointer; border:2px solid transparent; transition:0.15s; }
+    .modal-thumb:hover { border-color:#00b3ff; transform:translateY(-2px); }
+
+    .status-bar { margin-top:8px; font-size:12px; color:#aaa; }
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+  <div class="controls">
+    <h2>Poster Maker</h2>
+
+    <label>
+      Template
+      <select id="templateSelect" disabled>
+        <option value="default">Default</option>
+      </select>
+    </label>
+
+    <label>
+      Preset
+      <select id="presetSelect"></select>
+    </label>
+
+    <label>
+      Movie (from Plex)
+      <select id="movieSelect"></select>
+    </label>
+
+    <label>
+      Poster Filter
+      <select id="posterFilter">
+        <option value="all">All Posters</option>
+        <option value="textless">Textless Only</option>
+        <option value="text">With Text</option>
+      </select>
+    </label>
+
+    <div class="label">TMDb Posters</div>
+    <div class="thumb-strip" id="posterThumbStrip"></div>
+    <div class="thumb-actions">
+      <button class="secondary" id="posterViewAllBtn">View All Posters</button>
+      <button class="secondary" id="posterClearBtn">Clear Poster</button>
+    </div>
+
+    <div class="label">TMDb Logos</div>
+    <div class="thumb-strip" id="logoThumbStrip"></div>
+    <div class="thumb-actions">
+      <button class="secondary" id="logoViewAllBtn">View All Logos</button>
+      <button class="secondary" id="logoNoneBtn">No Logo</button>
+    </div>
+
+    <label>
+      Logo Mode
+      <select id="logoMode">
+        <option value="stock">Keep Original</option>
+        <option value="match">Color Match Poster</option>
+        <option value="hex">Use Custom Hex</option>
+      </select>
+    </label>
+    
+    <label id="logoColorLabel" style="display:none">
+      Logo Color
+      <input type="color" id="logoColor" value="#ffffff">
+    </label>
+
+    <label>Background URL
+      <input type="text" id="bgUrl" placeholder="TMDb or custom image URL" />
+    </label>
+
+    <label>Logo URL
+      <input type="text" id="logoUrl" placeholder="TMDb or custom logo URL" />
+    </label>
+
+    <hr />
+
+    <!-- Sliders -->
+    <div class="slider-group">
+      <label>Poster Zoom %
+        <div class="slider-row">
+          <input type="range" id="posterZoom" min="80" max="140" value="100">
+          <div class="slider-value" id="posterZoomVal">100%</div>
+        </div>
+      </label>
+
+      <label>Poster Shift Y %
+        <div class="slider-row">
+          <input type="range" id="posterShiftY" min="-50" max="50" value="0">
+          <div class="slider-value" id="posterShiftYVal">0%</div>
+        </div>
+      </label>
+
+      <label>Matte Height %
+        <div class="slider-row">
+          <input type="range" id="matteHeight" min="0" max="50" value="0">
+          <div class="slider-value" id="matteHeightVal">0%</div>
+        </div>
+      </label>
+
+      <label>Fade Height %
+        <div class="slider-row">
+          <input type="range" id="fadeHeight" min="0" max="40" value="0">
+          <div class="slider-value" id="fadeHeightVal">0%</div>
+        </div>
+      </label>
+
+      <label>Vignette
+        <div class="slider-row">
+          <input type="range" id="vignette" min="0" max="100" value="0">
+          <div class="slider-value" id="vignetteVal">0%</div>
+        </div>
+      </label>
+
+      <label>Grain
+        <div class="slider-row">
+          <input type="range" id="grain" min="0" max="60" value="0">
+          <div class="slider-value" id="grainVal">0%</div>
+        </div>
+      </label>
+
+      <label>Logo Scale %
+        <div class="slider-row">
+          <input type="range" id="logoScale" min="20" max="80" value="50">
+          <div class="slider-value" id="logoScaleVal">50%</div>
+        </div>
+      </label>
+
+      <label>Logo Position %
+        <div class="slider-row">
+          <input type="range" id="logoOffset" min="0" max="100" value="75">
+          <div class="slider-value" id="logoOffsetVal">75%</div>
+        </div>
+      </label>
+    </div>
+
+    <hr />
+
+    <label>Settings JSON
+      <textarea id="settingsJson" placeholder='Copy/apply preset + options JSON here'></textarea>
+    </label>
+    <div class="thumb-actions">
+      <button id="copySettingsBtn">Copy JSON</button>
+      <button id="applySettingsBtn">Apply JSON</button>
+    </div>
+    <div style="margin-top:6px;">
+      <button id="savePresetBtn">Save / Overwrite Preset</button>
+    </div>
+    
+    <button id="sendToPlexBtn" style="margin-top:8px; background:#4caf50;">Send to Plex</button>
+
+    <hr />
+
+    <button id="previewBtn">Preview</button>
+    <button id="saveBtn" style="margin-top:8px;">Save</button>
+
+    <div class="status-bar" id="status">Loading…</div>
+  </div>
+
+  <div class="preview">
+    <img id="previewImg" alt="Preview will appear here" />
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Select Image</h3>
+      <button class="secondary" id="modalCloseBtn">Close</button>
+    </div>
+    <div class="modal-grid" id="modalGrid"></div>
+  </div>
+</div>
+
+<script>
+const API = location.origin + "/api";
+
+let PRESETS = {};
+let CURRENT_POSTERS = [];
+let CURRENT_LOGOS = [];
+let previewTimer = null;
+
+/* ----------------- helpers ----------------- */
+function setStatus(msg) {
+  document.getElementById("status").textContent = msg;
+}
+
+function autoPreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    preview();
+  }, 250);
+}
+
+function hookSlider(id) {
+  const el = document.getElementById(id);
+  const lab = document.getElementById(id + "Val");
+  el.addEventListener("input", () => {
+    lab.textContent = el.value + "%";
+    autoPreview();
+  });
+  lab.textContent = el.value + "%";
+}
+/* ----------------- presets ----------------- */
+async function loadPresets() {
+  const res = await fetch(`${API}/presets`);
+  PRESETS = await res.json();
+}
+
+function populatePresets() {
+  const presetSelect = document.getElementById("presetSelect");
+  presetSelect.innerHTML = "";
+
+  const list = PRESETS.default?.presets || [];
+  list.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name;
+    presetSelect.appendChild(opt);
+  });
+
+  if (list.length) {
+    presetSelect.value = list[0].id;
+    setSlidersFromOptions(list[0].options);
+  }
+}
+
+document.getElementById("presetSelect").addEventListener("change", e => {
+  const id = e.target.value;
+  const preset = (PRESETS.default?.presets || []).find(p => p.id === id);
+  if (!preset) return;
+  setSlidersFromOptions(preset.options);
+  autoPreview();
+});
+
+/* ----------------- movies ----------------- */
+async function loadMovies() {
+  const res = await fetch(`${API}/movies`);
+  const movies = await res.json();
+  const sel = document.getElementById("movieSelect");
+  sel.innerHTML = "";
+  movies.forEach(m => {
+    const o = document.createElement("option");
+    o.value = m.key;
+    o.textContent = m.year ? `${m.title} (${m.year})` : m.title;
+    sel.appendChild(o);
+  });
+}
+
+document.getElementById("movieSelect").addEventListener("change", async () => {
+  const key = document.getElementById("movieSelect").value;
+  if (!key) return;
+  setStatus("Fetching TMDb images…");
+
+  const tmdbRes = await fetch(`${API}/movie/${key}/tmdb`);
+  const tmdb = await tmdbRes.json();
+
+  if (!tmdb.tmdb_id) {
+    CURRENT_POSTERS = [];
+    CURRENT_LOGOS = [];
+    renderThumbStrips();
+    setStatus("No TMDb ID.");
+    return;
+  }
+
+  const imgRes = await fetch(`${API}/tmdb/${tmdb.tmdb_id}/images`);
+  const imgs = await imgRes.json();
+
+  CURRENT_POSTERS = imgs.posters || [];
+  CURRENT_LOGOS = imgs.logos || [];
+
+  renderThumbStrips();
+
+  if (CURRENT_POSTERS.length) {
+    document.getElementById("bgUrl").value = CURRENT_POSTERS[0].url;
+  }
+  if (CURRENT_LOGOS.length) {
+    document.getElementById("logoUrl").value = CURRENT_LOGOS[0].url;
+  }
+
+  setStatus("TMDb assets loaded.");
+  autoPreview();
+});
+
+/* ----------------- thumbs + filter ----------------- */
+function renderThumbStrips() {
+  const posterStrip = document.getElementById("posterThumbStrip");
+  const logoStrip = document.getElementById("logoThumbStrip");
+  posterStrip.innerHTML = "";
+  logoStrip.innerHTML = "";
+
+  const currentBg = document.getElementById("bgUrl").value;
+  const currentLogo = document.getElementById("logoUrl").value;
+  const filter = document.getElementById("posterFilter").value;
+
+  let posters = CURRENT_POSTERS;
+  if (filter === "textless") posters = posters.filter(p => !p.has_text);
+  if (filter === "text") posters = posters.filter(p => p.has_text);
+
+  posters.forEach(p => {
+    const img = document.createElement("img");
+    img.src = p.thumb;
+    img.className = "thumb";
+    if (p.url === currentBg) img.classList.add("selected");
+    img.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById("bgUrl").value = p.url;
+      posterStrip.querySelectorAll(".thumb").forEach(t => t.classList.remove("selected"));
+      img.classList.add("selected");
+      autoPreview();
+    });
+
+    posterStrip.appendChild(img);
+  });
+
+  CURRENT_LOGOS.forEach(l => {
+    const img = document.createElement("img");
+    img.src = l.thumb;
+    img.className = "thumb";
+    if (l.url === currentLogo) img.classList.add("selected");
+    img.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById("logoUrl").value = l.url;
+      logoStrip.querySelectorAll(".thumb").forEach(t => t.classList.remove("selected"));
+      img.classList.add("selected");
+      autoPreview();
+    });
+
+    logoStrip.appendChild(img);
+  });
+}
+
+document.getElementById("posterFilter").addEventListener("change", () => {
+  renderThumbStrips();
+});
+
+/* ----------------- modal (view all) ----------------- */
+const modalBackdrop = document.getElementById("modalBackdrop");
+const modalGrid = document.getElementById("modalGrid");
+const modalTitle = document.getElementById("modalTitle");
+
+function openModal(kind) {
+  modalGrid.innerHTML = "";
+  modalTitle.textContent = kind === "poster" ? "Choose Poster" : "Choose Logo";
+
+  let items = kind === "poster" ? CURRENT_POSTERS : CURRENT_LOGOS;
+  if (kind === "poster") {
+    const filter = document.getElementById("posterFilter").value;
+    if (filter === "textless") items = items.filter(p => !p.has_text);
+    if (filter === "text") items = items.filter(p => p.has_text);
+  }
+
+  items.forEach(item => {
+    const img = document.createElement("img");
+    img.src = item.thumb;
+    img.className = "modal-thumb";
+    img.onclick = () => {
+      if (kind === "poster") {
+        document.getElementById("bgUrl").value = item.url;
+      } else {
+        document.getElementById("logoUrl").value = item.url;
+      }
+      modalBackdrop.classList.remove("show");
+      renderThumbStrips();
+      autoPreview();
+    };
+    modalGrid.appendChild(img);
+  });
+
+  modalBackdrop.classList.add("show");
+}
+
+function closeModal() {
+  modalBackdrop.classList.remove("show");
+}
+
+document.getElementById("posterViewAllBtn").onclick = () => {
+  if (!CURRENT_POSTERS.length) return setStatus("No posters loaded.");
+  openModal("poster");
+};
+document.getElementById("logoViewAllBtn").onclick = () => {
+  if (!CURRENT_LOGOS.length) return setStatus("No logos loaded.");
+  openModal("logo");
+};
+document.getElementById("modalCloseBtn").onclick = closeModal;
+modalBackdrop.onclick = e => { if (e.target === modalBackdrop) closeModal(); };
+
+document.getElementById("posterClearBtn").onclick = () => {
+  document.getElementById("bgUrl").value = "";
+  renderThumbStrips();
+  autoPreview();
+};
+document.getElementById("logoNoneBtn").onclick = () => {
+  document.getElementById("logoUrl").value = "";
+  renderThumbStrips();
+  autoPreview();
+};
+
+/* ----------------- logo mode selector ----------------- */
+const logoModeSel = document.getElementById("logoMode");
+const logoColorLabel = document.getElementById("logoColorLabel");
+
+logoModeSel.addEventListener("change", () => {
+  const mode = logoModeSel.value;
+  if (mode === "hex") {
+    logoColorLabel.style.display = "block";
+  } else {
+    logoColorLabel.style.display = "none";
+  }
+  autoPreview();
+});
+
+/* ----------------- sliders <-> options ----------------- */
+function setSlidersFromOptions(o) {
+  const map = {
+    posterZoom: o.poster_zoom,
+    posterShiftY: o.poster_shift_y,
+    matteHeight: o.matte_height_ratio,
+    fadeHeight: o.fade_height_ratio,
+    vignette: o.vignette_strength,
+    grain: o.grain_amount,
+    logoScale: o.logo_scale,
+    logoOffset: o.logo_offset,   // 0–1 from backend presets
+  };
+  Object.entries(map).forEach(([id, val]) => {
+    if (typeof val !== "number") return;
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    // logoOffset is position percentage now (0–1 → 0–100)
+    if (id === "logoOffset") {
+      el.value = Math.round(val * 100);
+    } else {
+      el.value = Math.round(val * 100);
+    }
+    document.getElementById(id + "Val").textContent = el.value + "%";
+  });
+
+  // Also sync logoMode / logoHex if present
+  if (o.logo_mode) {
+    document.getElementById("logoMode").value = o.logo_mode;
+    logoColorLabel.style.display = o.logo_mode === "hex" ? "block" : "none";
+  }
+  if (o.logo_hex) {
+    document.getElementById("logoColor").value = o.logo_hex;
+  }
+}
+
+function collectOptions() {
+  const g = id => document.getElementById(id).value / 100;
+  return {
+    poster_zoom: g("posterZoom"),
+    poster_shift_y: g("posterShiftY"),
+    matte_height_ratio: g("matteHeight"),
+    fade_height_ratio: g("fadeHeight"),
+    vignette_strength: g("vignette"),
+    grain_amount: g("grain"),
+    logo_scale: g("logoScale"),
+    // logoOffset slider is 0–100 → send as 0–1
+    logo_offset: g("logoOffset"),
+    logo_mode: document.getElementById("logoMode").value,
+    logo_hex: document.getElementById("logoColor").value
+  };
+}
+
+/* ----------------- preview / save ----------------- */
+async function preview() {
+  const bg = document.getElementById("bgUrl").value.trim();
+  if (!bg) {
+    setStatus("Background URL required.");
+    return;
+  }
+
+  const payload = {
+    template_id: "default",
+    background_url: bg,
+    logo_url: document.getElementById("logoUrl").value.trim() || null,
+    options: collectOptions(),
+  };
+
+  setStatus("Rendering…");
+  const res = await fetch(`${API}/preview`, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    setStatus("Error: " + (data.detail || res.statusText));
+    return;
+  }
+
+  document.getElementById("previewImg").src =
+    "data:image/jpeg;base64," + data.image_base64;
+  setStatus("Preview updated.");
+}
+
+document.getElementById("previewBtn").onclick = () => preview();
+
+document.getElementById("sendToPlexBtn").onclick = async () => {
+  const bg = document.getElementById("bgUrl").value.trim();
+  if (!bg) return setStatus("Background URL required.");
+
+  const ratingKey = document.getElementById("movieSelect").value;
+  if (!ratingKey) return setStatus("Select a movie.");
+
+  const payload = {
+    template_id: "default",
+    background_url: bg,
+    logo_url: document.getElementById("logoUrl").value.trim() || null,
+    options: collectOptions(),
+    rating_key: ratingKey,
+    filename: "poster.jpg"
+  };
+
+  setStatus("Uploading to Plex…");
+
+  const res = await fetch(`${API}/send_to_plex`, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+  if (!res.ok) return setStatus("Error: " + (data.detail || res.statusText));
+
+  setStatus("Poster uploaded to Plex!");
+};
+
+document.getElementById("saveBtn").onclick = async () => {
+  const bg = document.getElementById("bgUrl").value.trim();
+  if (!bg) return setStatus("Background URL required.");
+
+  const movieText =
+    document.getElementById("movieSelect").selectedOptions[0]?.textContent ||
+    "Unknown";
+  const m = movieText.match(/(.+?) \((\d{4})\)/);
+  const title = m ? m[1] : movieText;
+  const year = m ? parseInt(m[2]) : null;
+
+  const payload = {
+    template_id: "default",
+    background_url: bg,
+    logo_url: document.getElementById("logoUrl").value.trim() || null,
+    options: collectOptions(),
+    movie_title: title,
+    movie_year: year,
+    filename: "poster.jpg",
+  };
+
+  setStatus("Saving…");
+  const res = await fetch(`${API}/save`, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) return setStatus("Error: " + (data.detail || res.statusText));
+  setStatus("Saved: " + data.path);
+};
+
+/* ----------------- settings JSON + preset save ----------------- */
+document.getElementById("copySettingsBtn").onclick = () => {
+  const json = JSON.stringify({
+    preset: document.getElementById("presetSelect").value,
+    options: collectOptions(),
+  }, null, 2);
+
+  const ta = document.getElementById("settingsJson");
+  ta.value = json;
+  ta.select();
+  document.execCommand("copy");
+  setStatus("Settings JSON copied.");
+};
+
+document.getElementById("applySettingsBtn").onclick = () => {
+  try {
+    const obj = JSON.parse(document.getElementById("settingsJson").value);
+    if (obj.preset) {
+      document.getElementById("presetSelect").value = obj.preset;
+    }
+    if (obj.options) {
+      setSlidersFromOptions(obj.options);
+      autoPreview();
+    }
+    setStatus("Settings applied.");
+  } catch {
+    setStatus("Invalid JSON.");
+  }
+};
+
+document.getElementById("savePresetBtn").onclick = async () => {
+  const presetId = document.getElementById("presetSelect").value || "custom";
+  const options = collectOptions();
+
+  setStatus(`Saving preset "${presetId}"…`);
+
+  const res = await fetch(`${API}/presets/save`, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ preset_id: presetId, options })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    setStatus("Error: " + (data.detail || res.statusText));
+    return;
+  }
+
+  const selected = presetId;
+  const currentOptions = options;
+
+  await loadPresets();
+  populatePresets();
+  document.getElementById("presetSelect").value = selected;
+  setSlidersFromOptions(currentOptions);
+
+  setStatus(data.message);
+};
+
+/* ----------------- init ----------------- */
+(async function init() {
+  ["posterZoom","posterShiftY","matteHeight","fadeHeight",
+   "vignette","grain","logoScale","logoOffset"].forEach(hookSlider);
+
+  await loadPresets();
+  populatePresets();
+  await loadMovies();
+
+  // bg/logo URL manual typing auto-preview
+  document.getElementById("bgUrl").addEventListener("input", autoPreview);
+  document.getElementById("logoUrl").addEventListener("input", autoPreview);
+
+  // ensure correct initial visibility for hex mode
+  if (document.getElementById("logoMode").value === "hex") {
+    logoColorLabel.style.display = "block";
+  } else {
+    logoColorLabel.style.display = "none";
+  }
+
+  setStatus("Ready. Pick a movie, preset, then tweak sliders.");
+})();
+</script>
+
+</body>
+</html>
