@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Poster Maker</title>
+  <title>Simposter v1.1</title>
   <style>
     body { margin:0; background:#111; color:#eee; font-family:system-ui,sans-serif; }
     .wrap { display:flex; padding:16px; gap:16px; height:100vh; box-sizing:border-box; }
     .controls { width:380px; background:#181818; padding:16px; border-radius:8px; overflow-y:auto; }
     .preview { flex:1; display:flex; justify-content:center; align-items:center; overflow:auto; padding:10px; }
-    #previewImg { max-height:90vh; width:auto; cursor:ns-resize; user-select:none; box-shadow:0 0 40px rgba(0,0,0,0.6); border-radius:8px; background:#000; }
+    #previewImg { max-height:90vh; width:auto; user-select:none; box-shadow:0 0 40px rgba(0,0,0,0.6); border-radius:8px; background:#000; }
 
-    select, input[type="text"], input[type="range"], button, textarea {
+    select, input[type="text"], input[type="range"], button, textarea, input[type="color"] {
       width:100%; margin-top:4px; box-sizing:border-box;
     }
     label { display:block; margin-top:12px; font-size:14px; }
@@ -55,7 +55,7 @@
 <body>
 <div class="wrap">
   <div class="controls">
-    <h2>Poster Maker</h2>
+    <h2>Simposter</h2>
 
     <label>
       Template
@@ -71,8 +71,10 @@
 
     <label>
       Movie (from Plex)
+      <input type="text" id="movieSearch" placeholder="Search..." style="margin-bottom:6px;">
       <select id="movieSelect"></select>
     </label>
+    
 
     <label>
       Poster Filter
@@ -189,26 +191,48 @@
       <button id="copySettingsBtn">Copy JSON</button>
       <button id="applySettingsBtn">Apply JSON</button>
     </div>
+
+    <label style="margin-top:8px;">
+      New Preset ID (optional)
+      <input type="text" id="presetIdInput" placeholder="e.g. darkmatte-textless" />
+    </label>
+
     <div style="margin-top:6px;">
       <button id="savePresetBtn">Save / Overwrite Preset</button>
     </div>
-    
-    <button id="sendToPlexBtn" style="margin-top:8px; background:#4caf50;">Send to Plex</button>
 
     <hr />
 
     <button id="previewBtn">Preview</button>
-    <button id="saveBtn" style="margin-top:8px;">Save</button>
+    <button id="saveBtn" style="margin-top:8px;">Save to Disk</button>
+    <button id="sendPlexBtn" style="margin-top:8px;">Send to Plex</button>
+
+    <div style="margin-top:10px;">
+      <label style="font-size:13px;">
+        <input type="checkbox" id="enableLabelRemoval" checked />
+        Remove labels in Plex when sending
+      </label>
+      <div id="labelList" style="margin-top:4px; font-size:12px;"></div>
+    </div>
+
+    <button id="viewLogsBtn" class="secondary" style="margin-top:12px;">View Logs</button>
 
     <div class="status-bar" id="status">Loading…</div>
   </div>
 
-  <div class="preview">
+  <div class="preview" style="display:flex; gap:18px; align-items:flex-start;">
+
+    <div style="text-align:center;">
+      <div style="font-size:12px; color:#bbb; margin-bottom:6px;">Existing Poster</div>
+      <img id="existingPosterImg" style="width:160px; border-radius:6px; box-shadow:0 0 12px rgba(0,0,0,0.5);" />
+    </div>
+  
     <img id="previewImg" alt="Preview will appear here" />
   </div>
+
 </div>
 
-<!-- Modal -->
+<!-- Image Modal -->
 <div class="modal-backdrop" id="modalBackdrop">
   <div class="modal">
     <div class="modal-header">
@@ -216,6 +240,17 @@
       <button class="secondary" id="modalCloseBtn">Close</button>
     </div>
     <div class="modal-grid" id="modalGrid"></div>
+  </div>
+</div>
+
+<!-- Logs Modal -->
+<div class="modal-backdrop" id="logModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Simposter Logs</h3>
+      <button class="secondary" id="logModalCloseBtn">Close</button>
+    </div>
+    <pre id="logContent" style="max-height:70vh;overflow:auto;font-size:11px;background:#111;padding:8px;border-radius:4px;white-space:pre-wrap;"></pre>
   </div>
 </div>
 
@@ -248,6 +283,7 @@ function hookSlider(id) {
   });
   lab.textContent = el.value + "%";
 }
+
 /* ----------------- presets ----------------- */
 async function loadPresets() {
   const res = await fetch(`${API}/presets`);
@@ -294,6 +330,32 @@ async function loadMovies() {
   });
 }
 
+async function loadLabelsForMovie(key) {
+  const res = await fetch(`${API}/movie/${key}/labels`);
+  const data = await res.json();
+  const box = document.getElementById("labelList");
+  box.innerHTML = "";
+
+  if (!data.labels || data.labels.length === 0) {
+    box.textContent = "No labels found on this item.";
+    return;
+  }
+
+  data.labels.forEach(label => {
+    const row = document.createElement("div");
+    row.innerHTML = `
+      <label>
+        <input type="checkbox" class="label-checkbox" value="${label}">
+        ${label}
+      </label>
+    `;
+    box.appendChild(row);
+  });
+}
+
+
+
+
 document.getElementById("movieSelect").addEventListener("change", async () => {
   const key = document.getElementById("movieSelect").value;
   if (!key) return;
@@ -307,6 +369,7 @@ document.getElementById("movieSelect").addEventListener("change", async () => {
     CURRENT_LOGOS = [];
     renderThumbStrips();
     setStatus("No TMDb ID.");
+    await loadLabelsForMovie(key);
     return;
   }
 
@@ -325,9 +388,71 @@ document.getElementById("movieSelect").addEventListener("change", async () => {
     document.getElementById("logoUrl").value = CURRENT_LOGOS[0].url;
   }
 
+  // Fetch existing poster from Plex  
+  try {
+    const posterUrl = `${API}/movie/${key}/poster`;  
+    const posterRes = await fetch(posterUrl);
+    const posterData = await posterRes.json();
+    document.getElementById("existingPosterImg").src = posterData.url || "";
+  } catch {
+    document.getElementById("existingPosterImg").src = "";
+  }
+  
+  // Labels
+  await loadLabelsForMovie(key);
+  
   setStatus("TMDb assets loaded.");
   autoPreview();
+
 });
+
+/* ---- movie list ---- */
+let ALL_MOVIES = [];
+
+async function loadMovies() {
+  const res = await fetch(`${API}/movies`);
+  ALL_MOVIES = await res.json();
+  populateMovieDropdown(ALL_MOVIES);
+}
+
+function populateMovieDropdown(list) {
+  const sel = document.getElementById("movieSelect");
+  sel.innerHTML = "";
+  list.forEach(m => {
+    const o = document.createElement("option");
+    o.value = m.key;
+    o.textContent = m.year ? `${m.title} (${m.year})` : m.title;
+    sel.appendChild(o);
+  });
+}
+
+document.getElementById("movieSearch").addEventListener("input", e => {
+  const term = e.target.value.toLowerCase();
+  const filtered = ALL_MOVIES.filter(m =>
+    m.title.toLowerCase().includes(term)
+  );
+  populateMovieDropdown(filtered);
+});
+
+/* ----- auto-fetch after search ----- */
+let movieSearchTimer = null;
+
+document.getElementById("movieSearch").addEventListener("input", () => {
+  clearTimeout(movieSearchTimer);
+
+  movieSearchTimer = setTimeout(() => {
+    const sel = document.getElementById("movieSelect");
+    if (sel.options.length === 0) return;
+
+    // Auto-select the top match
+    sel.selectedIndex = 0;
+
+    // Trigger full fetch (same as user manually picking)
+    sel.dispatchEvent(new Event("change"));
+  }, 400); // 400ms after typing stops
+});
+
+
 
 /* ----------------- thumbs + filter ----------------- */
 function renderThumbStrips() {
@@ -476,16 +601,10 @@ function setSlidersFromOptions(o) {
     const el = document.getElementById(id);
     if (!el) return;
 
-    // logoOffset is position percentage now (0–1 → 0–100)
-    if (id === "logoOffset") {
-      el.value = Math.round(val * 100);
-    } else {
-      el.value = Math.round(val * 100);
-    }
+    el.value = Math.round(val * 100);
     document.getElementById(id + "Val").textContent = el.value + "%";
   });
 
-  // Also sync logoMode / logoHex if present
   if (o.logo_mode) {
     document.getElementById("logoMode").value = o.logo_mode;
     logoColorLabel.style.display = o.logo_mode === "hex" ? "block" : "none";
@@ -505,8 +624,7 @@ function collectOptions() {
     vignette_strength: g("vignette"),
     grain_amount: g("grain"),
     logo_scale: g("logoScale"),
-    // logoOffset slider is 0–100 → send as 0–1
-    logo_offset: g("logoOffset"),
+    logo_offset: g("logoOffset"),  // 0–1
     logo_mode: document.getElementById("logoMode").value,
     logo_hex: document.getElementById("logoColor").value
   };
@@ -546,43 +664,13 @@ async function preview() {
 
 document.getElementById("previewBtn").onclick = () => preview();
 
-document.getElementById("sendToPlexBtn").onclick = async () => {
-  const bg = document.getElementById("bgUrl").value.trim();
-  if (!bg) return setStatus("Background URL required.");
-
-  const ratingKey = document.getElementById("movieSelect").value;
-  if (!ratingKey) return setStatus("Select a movie.");
-
-  const payload = {
-    template_id: "default",
-    background_url: bg,
-    logo_url: document.getElementById("logoUrl").value.trim() || null,
-    options: collectOptions(),
-    rating_key: ratingKey,
-    filename: "poster.jpg"
-  };
-
-  setStatus("Uploading to Plex…");
-
-  const res = await fetch(`${API}/send_to_plex`, {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify(payload)
-  });
-
-  const data = await res.json();
-  if (!res.ok) return setStatus("Error: " + (data.detail || res.statusText));
-
-  setStatus("Poster uploaded to Plex!");
-};
-
 document.getElementById("saveBtn").onclick = async () => {
   const bg = document.getElementById("bgUrl").value.trim();
   if (!bg) return setStatus("Background URL required.");
 
-  const movieText =
-    document.getElementById("movieSelect").selectedOptions[0]?.textContent ||
-    "Unknown";
+  const movieSel = document.getElementById("movieSelect");
+  const movieText = movieSel.selectedOptions[0]?.textContent || "Unknown";
+  const key = movieSel.value;
   const m = movieText.match(/(.+?) \((\d{4})\)/);
   const title = m ? m[1] : movieText;
   const year = m ? parseInt(m[2]) : null;
@@ -606,6 +694,55 @@ document.getElementById("saveBtn").onclick = async () => {
   const data = await res.json();
   if (!res.ok) return setStatus("Error: " + (data.detail || res.statusText));
   setStatus("Saved: " + data.path);
+};
+
+document.getElementById("sendPlexBtn").onclick = async () => {
+  const bg = document.getElementById("bgUrl").value.trim();
+  if (!bg) return setStatus("Background URL required.");
+
+  const movieSel = document.getElementById("movieSelect");
+  const ratingKey = movieSel.value;
+  if (!ratingKey) return setStatus("Select a movie first.");
+
+  let labels = [];
+  if (document.getElementById("enableLabelRemoval").checked) {
+    document.querySelectorAll("#labelList .label-checkbox").forEach(cb => {
+      if (cb.checked) labels.push(cb.value);
+    });
+  }
+
+  const payload = {
+    template_id: "default",
+    background_url: bg,
+    logo_url: document.getElementById("logoUrl").value.trim() || null,
+    options: collectOptions(),
+    rating_key: ratingKey,
+    labels: labels,
+  };
+
+  setStatus("Sending to Plex…");
+  const res = await fetch(`${API}/plex/send`, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    setStatus("Error: " + (data.detail || res.statusText));
+    return;
+  }
+  setStatus("Sent to Plex." + (labels.length ? ` Removed labels: ${labels.join(", ")}` : ""));
+
+  //
+  // Refresh existing poster preview
+  //
+  try {
+    const posterRes = await fetch(`${API}/movie/${ratingKey}/poster`);
+    const posterData = await posterRes.json();
+    document.getElementById("existingPosterImg").src = posterData.url || "";
+  } catch {
+    document.getElementById("existingPosterImg").src = "";
+  }
 };
 
 /* ----------------- settings JSON + preset save ----------------- */
@@ -639,7 +776,9 @@ document.getElementById("applySettingsBtn").onclick = () => {
 };
 
 document.getElementById("savePresetBtn").onclick = async () => {
-  const presetId = document.getElementById("presetSelect").value || "custom";
+  const enteredId = document.getElementById("presetIdInput").value.trim();
+  const selectedFromList = document.getElementById("presetSelect").value;
+  const presetId = enteredId || selectedFromList || "custom";
   const options = collectOptions();
 
   setStatus(`Saving preset "${presetId}"…`);
@@ -665,6 +804,39 @@ document.getElementById("savePresetBtn").onclick = async () => {
 
   setStatus(data.message);
 };
+
+/* ----------------- logs modal ----------------- */
+const logModal = document.getElementById("logModal");
+const logContent = document.getElementById("logContent");
+document.getElementById("viewLogsBtn").onclick = async () => {
+  setStatus("Loading logs…");
+  const res = await fetch(`${API}/logs`);
+  const data = await res.json();
+  logContent.textContent = data.text || "";
+  logModal.classList.add("show");
+  setStatus("Logs loaded.");
+};
+document.getElementById("logModalCloseBtn").onclick = () => {
+  logModal.classList.remove("show");
+};
+logModal.onclick = e => {
+  if (e.target === logModal) logModal.classList.remove("show");
+};
+
+/* ----------------- label list toggle ----------------- */
+const labelRemovalCheckbox = document.getElementById("enableLabelRemoval");
+const labelListEl = document.getElementById("labelList");
+
+function updateLabelListVisibility() {
+  if (labelRemovalCheckbox.checked) {
+    labelListEl.style.display = "block";
+  } else {
+    labelListEl.style.display = "none";
+  }
+}
+
+labelRemovalCheckbox.addEventListener("change", updateLabelListVisibility);
+updateLabelListVisibility();
 
 /* ----------------- init ----------------- */
 (async function init() {
