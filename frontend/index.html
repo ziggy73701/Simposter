@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Simposter V1.1</title>
+  <title>Simposter V1.2</title>
   <style>
     body { margin:0; background:#111; color:#eee; font-family:system-ui,sans-serif; }
     .wrap { display:flex; padding:16px; gap:16px; height:100vh; box-sizing:border-box; }
@@ -116,7 +116,20 @@
     <label>Background URL
       <input type="text" id="bgUrl" placeholder="TMDb or custom image URL" />
     </label>
-
+    
+    <div id="bgDropZone" style="
+      border:1px dashed #444;
+      border-radius:4px;
+      padding:6px;
+      font-size:11px;
+      color:#aaa;
+      margin-top:4px;
+      text-align:center;
+    ">
+      Drag & drop an image file here to use as background
+    </div>
+    
+        
     <label>Logo URL
       <input type="text" id="logoUrl" placeholder="TMDb or custom logo URL" />
     </label>
@@ -180,6 +193,46 @@
           <div class="slider-value" id="logoOffsetVal">75%</div>
         </div>
       </label>
+      
+      <label>
+        Border Enabled
+        <select id="borderEnabled">
+          <option value="off">Off</option>
+          <option value="on">On</option>
+        </select>
+      </label>
+
+      <label>Border Thickness px
+        <div class="slider-row">
+          <input type="range" id="borderThickness" min="0" max="30" value="0">
+          <div class="slider-value" id="borderThicknessVal">0px</div>
+        </div>
+      </label>
+
+      <label>Border Color
+        <input type="color" id="borderColor" value="#ffffff">
+      </label>
+
+      <label>
+        Overlay PNG
+        <input type="text" id="overlayFile" placeholder="e.g. grain_overlay.png">
+      </label>
+
+      <label>Overlay Opacity %
+        <div class="slider-row">
+          <input type="range" id="overlayOpacity" min="0" max="100" value="40">
+          <div class="slider-value" id="overlayOpacityVal">40%</div>
+        </div>
+      </label>
+
+      <label>
+        Overlay Mode
+        <select id="overlayMode">
+          <option value="screen">Screen</option>
+          <option value="multiply">Multiply</option>
+          <option value="alpha">Alpha Composite</option>
+        </select>
+      </label>
     </div>
 
     <hr />
@@ -229,6 +282,29 @@
   
     <img id="previewImg" alt="Preview will appear here" />
   </div>
+  <hr />
+  <div style="margin-top:8px;">
+    <details>
+      <summary style="cursor:pointer;font-size:13px;">Batch Mode (advanced)</summary>
+      <div style="margin-top:8px;font-size:12px;">
+        <label>
+          Movies for Batch (Plex Items)
+          <select id="batchMovieSelect" multiple size="8" style="width:100%; margin-top:4px;"></select>
+        </label>
+
+        <label style="margin-top:6px;">
+          Remove labels (comma-separated, optional)
+          <input type="text" id="batchLabels" placeholder="e.g. Overlay, KD-Overlay" />
+        </label>
+        <label style="margin-top:6px;">
+          <input type="checkbox" id="batchSendToPlex" checked />
+          Send to Plex
+        </label>
+        <button id="runBatchBtn" style="margin-top:6px;">Run Batch</button>
+        <pre id="batchResult" style="margin-top:6px;max-height:120px;overflow:auto;background:#111;padding:4px;border-radius:4px;"></pre>
+      </div>
+    </details>
+  </div>
 
 </div>
 
@@ -277,12 +353,24 @@ function autoPreview() {
 function hookSlider(id) {
   const el = document.getElementById(id);
   const lab = document.getElementById(id + "Val");
+
+  const updateLabel = () => {
+    if (id === "borderThickness") {
+      lab.textContent = el.value + "px";
+    } else {
+      lab.textContent = el.value + "%";
+    }
+  };
+
   el.addEventListener("input", () => {
-    lab.textContent = el.value + "%";
+    updateLabel();
     autoPreview();
   });
-  lab.textContent = el.value + "%";
+
+  // initial
+  updateLabel();
 }
+
 
 /* ----------------- presets ----------------- */
 async function loadPresets() {
@@ -584,6 +672,64 @@ logoModeSel.addEventListener("change", () => {
   autoPreview();
 });
 
+/* ----------------- drag and drop bg ----------------- */
+
+function setupBackgroundDrop() {
+  const dz = document.getElementById("bgDropZone");
+  const bgInput = document.getElementById("bgUrl");
+
+  ["dragenter","dragover"].forEach(ev => {
+    dz.addEventListener(ev, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      dz.style.borderColor = "#2a7be4";
+    });
+  });
+
+  ["dragleave","drop"].forEach(ev => {
+    dz.addEventListener(ev, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      dz.style.borderColor = "#444";
+    });
+  });
+
+  dz.addEventListener("drop", async e => {
+    e.preventDefault();
+    e.stopPropagation();
+    dz.style.borderColor = "#444";
+
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    setStatus("Uploading background…");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch(`${API}/upload/background`, {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      setStatus("Upload error: " + (data.detail || res.statusText));
+      return;
+    }
+
+    // IMPORTANT: set the bgUrl input so preview() uses it
+    bgInput.value = data.url;
+
+    setStatus("Background uploaded.");
+
+    // 🔥 THE FIX — TRIGGER LIVE PREVIEW AFTER DROP
+    autoPreview();
+  });
+
+  
+}
+
+
 /* ----------------- sliders <-> options ----------------- */
 function setSlidersFromOptions(o) {
   const map = {
@@ -595,6 +741,8 @@ function setSlidersFromOptions(o) {
     grain: o.grain_amount,
     logoScale: o.logo_scale,
     logoOffset: o.logo_offset,   // 0–1 from backend presets
+    borderThickness: o.border_thickness,
+    overlayOpacity: o.overlay_opacity
   };
   Object.entries(map).forEach(([id, val]) => {
     if (typeof val !== "number") return;
@@ -602,7 +750,7 @@ function setSlidersFromOptions(o) {
     if (!el) return;
 
     el.value = Math.round(val * 100);
-    document.getElementById(id + "Val").textContent = el.value + "%";
+    document.getElementById(id + "Val").textContent = id === "borderThickness" ? el.value + " px" : el.value + "%";
   });
 
   if (o.logo_mode) {
@@ -611,6 +759,26 @@ function setSlidersFromOptions(o) {
   }
   if (o.logo_hex) {
     document.getElementById("logoColor").value = o.logo_hex;
+  }
+  if (typeof o.border_px === "number") {
+    const el = document.getElementById("borderThickness");
+    const lab = document.getElementById("borderThicknessVal");
+  
+    el.value = o.border_px;
+    lab.textContent = o.border_px + "px";
+  } 
+
+  if (typeof o.border_enabled === "boolean") {
+    document.getElementById("borderEnabled").value = o.border_enabled ? "on" : "off";
+  }
+  if (o.border_color) {
+    document.getElementById("borderColor").value = o.border_color;
+  }
+  if (o.overlay_file) {
+    document.getElementById("overlayFile").value = o.overlay_file;
+  }
+  if (o.overlay_mode) {
+    document.getElementById("overlayMode").value = o.overlay_mode;
   }
 }
 
@@ -626,7 +794,14 @@ function collectOptions() {
     logo_scale: g("logoScale"),
     logo_offset: g("logoOffset"),  // 0–1
     logo_mode: document.getElementById("logoMode").value,
-    logo_hex: document.getElementById("logoColor").value
+    logo_hex: document.getElementById("logoColor").value,
+    // NEW:
+    border_enabled: document.getElementById("borderEnabled").value === "on",
+    border_px: parseInt(document.getElementById("borderThickness").value, 10),
+    border_color: document.getElementById("borderColor").value,
+    overlay_file: document.getElementById("overlayFile").value.trim() || null,
+    overlay_opacity: document.getElementById("overlayOpacity").value / 100,
+    overlay_mode: document.getElementById("overlayMode").value
   };
 }
 
@@ -809,6 +984,57 @@ document.getElementById("savePresetBtn").onclick = async () => {
   setStatus(data.message);
 };
 
+/* ----------------- batch run ----------------- */
+document.getElementById("runBatchBtn").onclick = async () => {
+  const rating_keys = Array.from(
+    document.getElementById("batchMovieSelect").selectedOptions
+  ).map(o => o.value);
+
+  // parse labels
+  const labelsRaw = document.getElementById("batchLabels").value.trim();
+  const labels = labelsRaw ? labelsRaw.split(",").map(s => s.trim()).filter(Boolean) : [];
+
+  const payload = {
+    rating_keys,
+    template_id: "default",
+    options: collectOptions(),
+    send_to_plex: document.getElementById("batchSendToPlex").checked,
+    labels
+  };
+
+  setStatus("Running batch…");
+  const res = await fetch(`${API}/batch`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    setStatus("Batch error: " + (data.detail || res.statusText));
+    return;
+  }
+
+  setStatus("Batch complete.");
+  document.getElementById("batchResult").textContent = JSON.stringify(data.results, null, 2);
+};
+
+async function loadBatchMovieList() {
+  const res = await fetch(`${API}/movies/tmdb`);
+  const movies = await res.json();
+  const sel = document.getElementById("batchMovieSelect");
+
+  sel.innerHTML = "";
+  movies.forEach(m => {
+    const op = document.createElement("option");
+    op.value = m.rating_key;
+    op.textContent = m.year ? `${m.title} (${m.year})` : m.title;
+    sel.appendChild(op);
+  });
+}
+
+
+
 /* ----------------- logs modal ----------------- */
 const logModal = document.getElementById("logModal");
 const logContent = document.getElementById("logContent");
@@ -845,16 +1071,16 @@ updateLabelListVisibility();
 /* ----------------- init ----------------- */
 (async function init() {
   ["posterZoom","posterShiftY","matteHeight","fadeHeight",
-   "vignette","grain","logoScale","logoOffset"].forEach(hookSlider);
+   "vignette","grain","logoScale","logoOffset","borderThickness","overlayOpacity"].forEach(hookSlider);
 
   await loadPresets();
   populatePresets();
   await loadMovies();
-
+  await loadBatchMovieList();
   // bg/logo URL manual typing auto-preview
   document.getElementById("bgUrl").addEventListener("input", autoPreview);
   document.getElementById("logoUrl").addEventListener("input", autoPreview);
-
+  setupBackgroundDrop();
   // ensure correct initial visibility for hex mode
   if (document.getElementById("logoMode").value === "hex") {
     logoColorLabel.style.display = "block";
