@@ -1,3 +1,17 @@
+# ---------- Frontend build stage ----------
+FROM node:20-alpine AS frontend-builder
+WORKDIR /frontend
+
+# Copy frontend dependencies and sources
+COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend ./
+
+# Build with API pointing at container backend (same port)
+ARG VITE_API_URL=http://localhost:8003
+ENV VITE_API_URL=${VITE_API_URL}
+RUN npm ci && npm run build
+
+# ---------- Backend/runtime stage ----------
 FROM python:3.10-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -17,9 +31,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Ensure default folders exist in image (mount overrides are fine)
 RUN mkdir -p /config/output /config/uploads
 
-# Copy app code
+# Copy backend code
 COPY backend ./backend
-COPY frontend ./frontend
+
+# Copy built frontend assets
+COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 VOLUME ["/config"]
 EXPOSE 8003
