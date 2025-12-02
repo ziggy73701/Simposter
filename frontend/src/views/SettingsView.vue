@@ -18,6 +18,16 @@ const localPlexToken = ref('')
 const localPlexLibrary = ref('')
 const localTmdbApiKey = ref('')
 const localTvdbApiKey = ref('')
+// Image Quality
+const localOutputFormat = ref('jpg')
+const localJpgQuality = ref(95)
+const localPngCompression = ref(6)
+const localWebpQuality = ref(90)
+// Performance
+const localConcurrentRenders = ref(2)
+const localTmdbRateLimit = ref(40)
+const localTvdbRateLimit = ref(20)
+const localMemoryLimit = ref(2048)
 
 const loadLocalSettings = () => {
   localTheme.value = settings.theme.value
@@ -30,6 +40,16 @@ const loadLocalSettings = () => {
   localPlexLibrary.value = settings.plex.value.movieLibraryName
   localTmdbApiKey.value = settings.tmdb.value.apiKey
   localTvdbApiKey.value = settings.tvdb.value.apiKey
+  // Image Quality
+  localOutputFormat.value = settings.imageQuality.value.outputFormat
+  localJpgQuality.value = settings.imageQuality.value.jpgQuality
+  localPngCompression.value = settings.imageQuality.value.pngCompression
+  localWebpQuality.value = settings.imageQuality.value.webpQuality
+  // Performance
+  localConcurrentRenders.value = settings.performance.value.concurrentRenders
+  localTmdbRateLimit.value = settings.performance.value.tmdbRateLimit
+  localTvdbRateLimit.value = settings.performance.value.tvdbRateLimit
+  localMemoryLimit.value = settings.performance.value.memoryLimit
 }
 
 const saveSettings = async () => {
@@ -45,6 +65,18 @@ const saveSettings = async () => {
   }
   settings.tmdb.value = { apiKey: localTmdbApiKey.value }
   settings.tvdb.value = { apiKey: localTvdbApiKey.value, comingSoon: settings.tvdb.value.comingSoon }
+  settings.imageQuality.value = {
+    outputFormat: localOutputFormat.value,
+    jpgQuality: localJpgQuality.value,
+    pngCompression: localPngCompression.value,
+    webpQuality: localWebpQuality.value
+  }
+  settings.performance.value = {
+    concurrentRenders: localConcurrentRenders.value,
+    tmdbRateLimit: localTmdbRateLimit.value,
+    tvdbRateLimit: localTvdbRateLimit.value,
+    memoryLimit: localMemoryLimit.value
+  }
 
   // Save to backend
   await settings.save()
@@ -311,6 +343,120 @@ const isLabelSelected = (label: string) => {
       </div>
     </div>
 
+    <div class="settings-section">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        Image Quality
+      </h3>
+      <div class="grid">
+        <label>
+          <span class="label-text">Output Format</span>
+          <select v-model="localOutputFormat">
+            <option value="jpg">JPEG</option>
+            <option value="png">PNG</option>
+            <option value="webp">WebP</option>
+          </select>
+        </label>
+        <label v-if="localOutputFormat === 'jpg'">
+          <span class="label-text">JPEG Quality</span>
+          <input
+            v-model.number="localJpgQuality"
+            type="range"
+            min="60"
+            max="100"
+            class="quality-slider"
+          />
+          <div class="slider-value">{{ localJpgQuality }}%</div>
+        </label>
+        <label v-if="localOutputFormat === 'png'">
+          <span class="label-text">PNG Compression</span>
+          <input
+            v-model.number="localPngCompression"
+            type="range"
+            min="0"
+            max="9"
+            class="quality-slider"
+          />
+          <div class="slider-value">Level {{ localPngCompression }}</div>
+        </label>
+        <label v-if="localOutputFormat === 'webp'">
+          <span class="label-text">WebP Quality</span>
+          <input
+            v-model.number="localWebpQuality"
+            type="range"
+            min="60"
+            max="100"
+            class="quality-slider"
+          />
+          <div class="slider-value">{{ localWebpQuality }}%</div>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Performance
+      </h3>
+      <div class="grid">
+        <label>
+          <span class="label-text">Concurrent Renders</span>
+          <input
+            v-model.number="localConcurrentRenders"
+            type="number"
+            min="1"
+            max="8"
+            @select.stop
+            @selectstart.stop
+          />
+          <span class="help-text">How many posters to render at the same time</span>
+        </label>
+        <label>
+          <span class="label-text">TMDb Rate Limit</span>
+          <input
+            v-model.number="localTmdbRateLimit"
+            type="number"
+            min="10"
+            max="100"
+            @select.stop
+            @selectstart.stop
+          />
+          <span class="help-text">Requests per 10 seconds</span>
+        </label>
+        <label>
+          <span class="label-text">TVDB Rate Limit</span>
+          <input
+            v-model.number="localTvdbRateLimit"
+            type="number"
+            min="5"
+            max="50"
+            @select.stop
+            @selectstart.stop
+          />
+          <span class="help-text">Requests per 10 seconds</span>
+        </label>
+        <label>
+          <span class="label-text">Memory Limit (MB)</span>
+          <input
+            v-model.number="localMemoryLimit"
+            type="number"
+            min="512"
+            max="8192"
+            step="256"
+            @select.stop
+            @selectstart.stop
+          />
+          <span class="help-text">Maximum memory for image processing</span>
+        </label>
+      </div>
+    </div>
+
     <div v-if="allLabels.length > 0" class="settings-section labels-section">
       <h3 class="section-title">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -494,6 +640,43 @@ input[type="checkbox"] {
   border-radius: 4px;
   cursor: pointer;
   accent-color: var(--accent);
+}
+
+.quality-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+  cursor: pointer;
+}
+
+.quality-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(61, 214, 183, 0.3);
+}
+
+.quality-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(61, 214, 183, 0.3);
+}
+
+.slider-value {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
 }
 
 .labels-section {

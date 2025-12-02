@@ -2,9 +2,11 @@
 # V1.3.1 - behaves the same as your old V1.2 universal renderer
 
 from typing import Dict, Any, Optional
-from PIL import Image, ImageDraw, ImageOps, ImageEnhance, ImageFilter, ImageChops
+from PIL import Image, ImageDraw, ImageOps, ImageEnhance, ImageFilter, ImageChops, ImageFont
 import random
 import numpy as np
+import os
+from pathlib import Path
 
 # ============================================================
 # Helpers
@@ -129,6 +131,284 @@ def _solid_color_logo(logo: Image.Image, color: tuple[int, int, int]) -> Image.I
             a,
         ),
     )
+
+
+def _load_font(font_family: str, font_size: int):
+    """
+    Load a font by name. First checks /config/fonts for custom fonts,
+    then falls back to system fonts.
+    """
+    # Try custom fonts folder first
+    custom_fonts_dir = Path(__file__).parent.parent / "config" / "fonts"
+    if custom_fonts_dir.exists():
+        # Look for font files with the given family name
+        font_extensions = ['.ttf', '.otf', '.TTF', '.OTF']
+        for ext in font_extensions:
+            font_path = custom_fonts_dir / f"{font_family}{ext}"
+            if font_path.exists():
+                try:
+                    return ImageFont.truetype(str(font_path), font_size)
+                except Exception:
+                    pass
+
+    # Common system font mappings for Windows/Linux/Mac
+    system_font_map = {
+        'Arial': ['arial.ttf', 'Arial.ttf', '/System/Library/Fonts/Supplemental/Arial.ttf'],
+        'Helvetica': ['Helvetica.ttc', 'helvetica.ttf', '/System/Library/Fonts/Helvetica.ttc'],
+        'Times New Roman': ['times.ttf', 'Times New Roman.ttf', '/System/Library/Fonts/Supplemental/Times New Roman.ttf'],
+        'Georgia': ['georgia.ttf', 'Georgia.ttf', '/System/Library/Fonts/Supplemental/Georgia.ttf'],
+        'Verdana': ['verdana.ttf', 'Verdana.ttf', '/System/Library/Fonts/Supplemental/Verdana.ttf'],
+        'Courier New': ['cour.ttf', 'Courier New.ttf', '/System/Library/Fonts/Supplemental/Courier New.ttf'],
+        'Impact': ['impact.ttf', 'Impact.ttf', '/System/Library/Fonts/Supplemental/Impact.ttf'],
+    }
+
+    # Try system fonts
+    font_names = system_font_map.get(font_family, [font_family + '.ttf'])
+    for font_name in font_names:
+        try:
+            return ImageFont.truetype(font_name, font_size)
+        except Exception:
+            pass
+
+    # Final fallback to default font
+    try:
+        return ImageFont.load_default()
+    except Exception:
+        return ImageFont.load_default()
+
+
+def _render_text_overlay(
+    canvas: Image.Image,
+    text: str,
+    options: Dict[str, Any]
+) -> Image.Image:
+    """
+    Render custom text overlay on the canvas.
+    Supports font customization, positioning, shadows, and outlines.
+    """
+    if not text or not text.strip():
+        print(f"[DEBUG] Text overlay skipped - empty text: '{text}'")
+        return canvas
+
+    print(f"[DEBUG] Rendering text overlay: '{text}'")
+    W, H = canvas.size
+    print(f"[DEBUG] Canvas size: {W}x{H}")
+
+    # Extract text options
+    font_family = str(options.get("font_family", "Arial"))
+    font_size = int(options.get("font_size", 120))
+    font_weight = str(options.get("font_weight", "700"))
+    text_color = _hex_to_rgb(options.get("text_color", "#ffffff"))
+    text_align = str(options.get("text_align", "center"))
+    text_transform = str(options.get("text_transform", "uppercase"))
+    letter_spacing = int(options.get("letter_spacing", 2))
+    line_height = float(options.get("line_height", 1.2))
+    position_y = float(options.get("position_y", 0.75))
+
+    # Shadow options
+    shadow_enabled = bool(options.get("shadow_enabled", True))
+    shadow_blur = int(options.get("shadow_blur", 10))
+    shadow_offset_x = int(options.get("shadow_offset_x", 0))
+    shadow_offset_y = int(options.get("shadow_offset_y", 4))
+    shadow_color = _hex_to_rgb(options.get("shadow_color", "#000000"))
+    shadow_opacity = float(options.get("shadow_opacity", 0.8))
+
+    # Stroke options
+    stroke_enabled = bool(options.get("stroke_enabled", False))
+    stroke_width = int(options.get("stroke_width", 4))
+    stroke_color = _hex_to_rgb(options.get("stroke_color", "#000000"))
+
+    # Apply text transform
+    if text_transform == "uppercase":
+        text = text.upper()
+    elif text_transform == "lowercase":
+        text = text.lower()
+    elif text_transform == "capitalize":
+        text = text.title()
+
+    # Load font
+    font = _load_font(font_family, font_size)
+    print(f"[DEBUG] Font loaded: {font_family} size {font_size}")
+
+    # Create a drawing context for text measurement
+    temp_img = Image.new("RGBA", (1, 1))
+    temp_draw = ImageDraw.Draw(temp_img)
+
+    # Helper function to apply letter spacing
+    def apply_letter_spacing(text_line: str) -> str:
+        if letter_spacing > 0:
+            return ''.join(c + ' ' * letter_spacing for c in text_line).rstrip()
+        return text_line
+
+    # Helper function to measure text width
+    def measure_text_width(text_line: str) -> int:
+        spaced = apply_letter_spacing(text_line)
+        bbox = temp_draw.textbbox((0, 0), spaced, font=font)
+        return bbox[2] - bbox[0]
+
+    # Helper function to wrap a line if it's too wide
+    def wrap_line(line: str, max_width: int) -> list[str]:
+        """Wrap a line into multiple lines if it exceeds max_width"""
+        if not line:
+            return ['']
+
+        # Check if the whole line fits
+        if measure_text_width(line) <= max_width:
+            return [line]
+
+        # Split into words and wrap
+        words = line.split(' ')
+        wrapped_lines = []
+        current_line = ''
+
+        for word in words:
+            # Try adding the word
+            test_line = current_line + (' ' if current_line else '') + word
+
+            if measure_text_width(test_line) <= max_width:
+                current_line = test_line
+            else:
+                # Word doesn't fit, check if we need to break the word itself
+                if current_line:
+                    wrapped_lines.append(current_line)
+                    current_line = word
+                else:
+                    # Single word is too long, need to break it by characters
+                    if measure_text_width(word) > max_width:
+                        # Break word character by character
+                        for char in word:
+                            test_line = current_line + char
+                            if measure_text_width(test_line) <= max_width:
+                                current_line = test_line
+                            else:
+                                if current_line:
+                                    wrapped_lines.append(current_line)
+                                current_line = char
+                    else:
+                        current_line = word
+
+        if current_line:
+            wrapped_lines.append(current_line)
+
+        return wrapped_lines if wrapped_lines else ['']
+
+    # Calculate max width (canvas width minus margins)
+    margin_left = 100
+    margin_right = 100
+    max_text_width = W - margin_left - margin_right
+
+    # Split text into lines and wrap if needed
+    lines = text.split('\n')
+    wrapped_lines = []
+    for line in lines:
+        wrapped_lines.extend(wrap_line(line, max_text_width))
+
+    # Measure all wrapped lines
+    line_heights = []
+    line_widths = []
+
+    for line in wrapped_lines:
+        spaced_line = apply_letter_spacing(line)
+        bbox = temp_draw.textbbox((0, 0), spaced_line, font=font)
+        line_width = bbox[2] - bbox[0]
+        line_height_val = bbox[3] - bbox[1]
+
+        line_widths.append(line_width)
+        line_heights.append(line_height_val)
+
+    # Calculate total text block height with line spacing
+    total_height = sum(line_heights) + int(font_size * (line_height - 1) * (len(wrapped_lines) - 1))
+    max_width = max(line_widths) if line_widths else 0
+
+    print(f"[DEBUG] Text wrapped into {len(wrapped_lines)} lines (original: {len(lines)} lines)")
+    print(f"[DEBUG] Max text width allowed: {max_text_width}px")
+
+    # Calculate Y position
+    y_pos = int(H * position_y - total_height / 2)
+    print(f"[DEBUG] Text position: y={y_pos}, position_y={position_y}, total_height={total_height}")
+    print(f"[DEBUG] Text color: {text_color}, align: {text_align}")
+
+    # Create layer for text with extra space for shadow/stroke
+    padding = max(shadow_blur + abs(shadow_offset_x) + abs(shadow_offset_y), stroke_width) + 50
+    text_layer = Image.new("RGBA", (W + padding * 2, H + padding * 2), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(text_layer)
+
+    # Draw each line
+    current_y = y_pos + padding
+    for i, line in enumerate(wrapped_lines):
+        # Add letter spacing
+        spaced_line = apply_letter_spacing(line)
+
+        # Calculate X position based on alignment
+        line_width = line_widths[i]
+        if text_align == "center":
+            x_pos = (W - line_width) // 2 + padding
+        elif text_align == "right":
+            x_pos = W - line_width - 100 + padding  # 100px margin from right
+        else:  # left
+            x_pos = 100 + padding  # 100px margin from left
+
+        # Draw shadow if enabled
+        if shadow_enabled and shadow_blur > 0:
+            # Create shadow layer
+            shadow_layer = Image.new("RGBA", text_layer.size, (0, 0, 0, 0))
+            shadow_draw = ImageDraw.Draw(shadow_layer)
+
+            shadow_x = x_pos + shadow_offset_x
+            shadow_y = current_y + shadow_offset_y
+
+            # Draw shadow with stroke if stroke is enabled
+            if stroke_enabled:
+                shadow_draw.text(
+                    (shadow_x, shadow_y),
+                    spaced_line,
+                    font=font,
+                    fill=(*shadow_color, int(255 * shadow_opacity)),
+                    stroke_width=stroke_width,
+                    stroke_fill=(*shadow_color, int(255 * shadow_opacity))
+                )
+            else:
+                shadow_draw.text(
+                    (shadow_x, shadow_y),
+                    spaced_line,
+                    font=font,
+                    fill=(*shadow_color, int(255 * shadow_opacity))
+                )
+
+            # Blur shadow
+            shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(shadow_blur))
+            text_layer = Image.alpha_composite(text_layer, shadow_layer)
+
+        # Draw text with stroke/outline if enabled
+        if stroke_enabled:
+            draw.text(
+                (x_pos, current_y),
+                spaced_line,
+                font=font,
+                fill=(*text_color, 255),
+                stroke_width=stroke_width,
+                stroke_fill=(*stroke_color, 255)
+            )
+        else:
+            draw.text(
+                (x_pos, current_y),
+                spaced_line,
+                font=font,
+                fill=(*text_color, 255)
+            )
+
+        # Move to next line
+        current_y += line_heights[i] + int(font_size * (line_height - 1))
+
+    # Crop text layer back to canvas size
+    text_layer = text_layer.crop((padding, padding, W + padding, H + padding))
+
+    # Composite text onto canvas
+    canvas = canvas.convert("RGBA")
+    canvas = Image.alpha_composite(canvas, text_layer)
+    print(f"[DEBUG] Text overlay composited successfully")
+
+    return canvas
 
 
 # ============================================================
@@ -289,6 +569,15 @@ def render_universal(
         x_logo = (W - logo.width) // 2
 
         canvas.alpha_composite(logo, (x_logo, y_logo))
+
+    # ------------- TEXT OVERLAY -------------
+    text_overlay_enabled = bool(options.get("text_overlay_enabled", False))
+    print(f"[DEBUG] Text overlay enabled: {text_overlay_enabled}")
+    if text_overlay_enabled:
+        custom_text = str(options.get("custom_text", ""))
+        print(f"[DEBUG] Custom text: '{custom_text}'")
+        if custom_text:
+            canvas = _render_text_overlay(canvas, custom_text, options)
 
     # ------------- ROUNDED CORNERS + BORDER -------------
     canvas = canvas.convert("RGBA")

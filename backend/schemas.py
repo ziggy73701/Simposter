@@ -57,16 +57,30 @@ class TVDBSettings(BaseModel):
     comingSoon: bool = True
 
 
+class ImageQualitySettings(BaseModel):
+    outputFormat: str = "jpg"  # jpg, png, webp
+    jpgQuality: int = 95
+    pngCompression: int = 6
+    webpQuality: int = 90
+
+
+class PerformanceSettings(BaseModel):
+    concurrentRenders: int = 2
+    tmdbRateLimit: int = 40  # requests per 10 seconds
+    tvdbRateLimit: int = 20
+    memoryLimit: int = 2048  # MB
+
+
 class UISettings(BaseModel):
     theme: str = "neon"
-    showBoundingBoxes: bool = True
-    autoSave: bool = False
     posterDensity: int = 20
     saveLocation: str = "/output"
     defaultLabelsToRemove: List[str] = Field(default_factory=list)
     plex: PlexSettings = Field(default_factory=PlexSettings)
     tmdb: TMDBSettings = Field(default_factory=TMDBSettings)
     tvdb: TVDBSettings = Field(default_factory=TVDBSettings)
+    imageQuality: ImageQualitySettings = Field(default_factory=ImageQualitySettings)
+    performance: PerformanceSettings = Field(default_factory=PerformanceSettings)
 
 class PlexSendRequest(BaseModel):
     template_id: str

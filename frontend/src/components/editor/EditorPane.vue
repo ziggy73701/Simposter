@@ -5,6 +5,7 @@ import { useRenderService } from '../../services/render'
 import { usePresetService } from '../../services/presets'
 import { useNotification } from '../../composables/useNotification'
 import { useSettingsStore } from '../../stores/settings'
+import TextOverlayPanel from './TextOverlayPanel.vue'
 
 const props = defineProps<{ movie: MovieInput }>()
 
@@ -62,6 +63,29 @@ const options = ref({
   overlayMode: 'screen'
 })
 
+// Text overlay settings
+const textOverlayEnabled = ref(false)
+const customText = ref('')
+const fontFamily = ref('Arial')
+const fontSize = ref(120)
+const fontWeight = ref('700')
+const textColor = ref('#ffffff')
+const textAlign = ref('center')
+const textTransform = ref('uppercase')
+const letterSpacing = ref(2)
+const lineHeight = ref(120)
+const positionY = ref(75)
+const shadowEnabled = ref(true)
+const shadowBlur = ref(10)
+const shadowOffsetX = ref(0)
+const shadowOffsetY = ref(4)
+const shadowColor = ref('#000000')
+const shadowOpacity = ref(80)
+const strokeEnabled = ref(false)
+const strokeWidth = ref(4)
+const strokeColor = ref('#000000')
+const availableFonts = ref<string[]>([])
+
 const render = useRenderService()
 const loading = render.loading
 const error = render.error
@@ -91,7 +115,29 @@ const saveEditorState = () => {
       posterFilter: posterFilter.value,
       logoPreference: logoPreference.value,
       logoMode: logoMode.value,
-      logoHex: logoHex.value
+      logoHex: logoHex.value,
+      textOverlay: {
+        enabled: textOverlayEnabled.value,
+        customText: customText.value,
+        fontFamily: fontFamily.value,
+        fontSize: fontSize.value,
+        fontWeight: fontWeight.value,
+        textColor: textColor.value,
+        textAlign: textAlign.value,
+        textTransform: textTransform.value,
+        letterSpacing: letterSpacing.value,
+        lineHeight: lineHeight.value,
+        positionY: positionY.value,
+        shadowEnabled: shadowEnabled.value,
+        shadowBlur: shadowBlur.value,
+        shadowOffsetX: shadowOffsetX.value,
+        shadowOffsetY: shadowOffsetY.value,
+        shadowColor: shadowColor.value,
+        shadowOpacity: shadowOpacity.value,
+        strokeEnabled: strokeEnabled.value,
+        strokeWidth: strokeWidth.value,
+        strokeColor: strokeColor.value
+      }
     }
     localStorage.setItem(EDITOR_STATE_KEY, JSON.stringify(state))
   } catch (e) {
@@ -111,6 +157,28 @@ const loadEditorState = () => {
     if (state.logoPreference) logoPreference.value = state.logoPreference
     if (state.logoMode) logoMode.value = state.logoMode
     if (state.logoHex) logoHex.value = state.logoHex
+    if (state.textOverlay) {
+      textOverlayEnabled.value = state.textOverlay.enabled ?? false
+      customText.value = state.textOverlay.customText ?? ''
+      fontFamily.value = state.textOverlay.fontFamily ?? 'Arial'
+      fontSize.value = state.textOverlay.fontSize ?? 120
+      fontWeight.value = state.textOverlay.fontWeight ?? '700'
+      textColor.value = state.textOverlay.textColor ?? '#ffffff'
+      textAlign.value = state.textOverlay.textAlign ?? 'center'
+      textTransform.value = state.textOverlay.textTransform ?? 'uppercase'
+      letterSpacing.value = state.textOverlay.letterSpacing ?? 2
+      lineHeight.value = state.textOverlay.lineHeight ?? 120
+      positionY.value = state.textOverlay.positionY ?? 75
+      shadowEnabled.value = state.textOverlay.shadowEnabled ?? true
+      shadowBlur.value = state.textOverlay.shadowBlur ?? 10
+      shadowOffsetX.value = state.textOverlay.shadowOffsetX ?? 0
+      shadowOffsetY.value = state.textOverlay.shadowOffsetY ?? 4
+      shadowColor.value = state.textOverlay.shadowColor ?? '#000000'
+      shadowOpacity.value = state.textOverlay.shadowOpacity ?? 80
+      strokeEnabled.value = state.textOverlay.strokeEnabled ?? false
+      strokeWidth.value = state.textOverlay.strokeWidth ?? 4
+      strokeColor.value = state.textOverlay.strokeColor ?? '#000000'
+    }
   } catch (e) {
     console.warn('Failed to load editor state:', e)
   }
@@ -186,7 +254,27 @@ const optionsPayload = computed(() => ({
   logo_mode: logoMode.value,
   logo_hex: logoHex.value,
   poster_filter: posterFilter.value,
-  logo_preference: logoPreference.value
+  logo_preference: logoPreference.value,
+  text_overlay_enabled: textOverlayEnabled.value,
+  custom_text: customText.value,
+  font_family: fontFamily.value,
+  font_size: fontSize.value,
+  font_weight: fontWeight.value,
+  text_color: textColor.value,
+  text_align: textAlign.value,
+  text_transform: textTransform.value,
+  letter_spacing: letterSpacing.value,
+  line_height: lineHeight.value / 100,
+  position_y: positionY.value / 100,
+  shadow_enabled: shadowEnabled.value,
+  shadow_blur: shadowBlur.value,
+  shadow_offset_x: shadowOffsetX.value,
+  shadow_offset_y: shadowOffsetY.value,
+  shadow_color: shadowColor.value,
+  shadow_opacity: shadowOpacity.value / 100,
+  stroke_enabled: strokeEnabled.value,
+  stroke_width: strokeWidth.value,
+  stroke_color: strokeColor.value
 }))
 
 const bgUrl = computed(() => selectedPoster.value || '')
@@ -225,6 +313,28 @@ const reloadPreset = () => {
       logoHex.value = o.logo_hex
     }
 
+    // Load text overlay settings
+    if (typeof o.text_overlay_enabled === 'boolean') textOverlayEnabled.value = o.text_overlay_enabled
+    if (typeof o.custom_text === 'string') customText.value = o.custom_text
+    if (typeof o.font_family === 'string') fontFamily.value = o.font_family
+    if (typeof o.font_size === 'number') fontSize.value = o.font_size
+    if (typeof o.font_weight === 'string') fontWeight.value = o.font_weight
+    if (typeof o.text_color === 'string') textColor.value = o.text_color
+    if (typeof o.text_align === 'string') textAlign.value = o.text_align
+    if (typeof o.text_transform === 'string') textTransform.value = o.text_transform
+    if (typeof o.letter_spacing === 'number') letterSpacing.value = o.letter_spacing
+    if (typeof o.line_height === 'number') lineHeight.value = Math.round(o.line_height * 100)
+    if (typeof o.position_y === 'number') positionY.value = Math.round(o.position_y * 100)
+    if (typeof o.shadow_enabled === 'boolean') shadowEnabled.value = o.shadow_enabled
+    if (typeof o.shadow_blur === 'number') shadowBlur.value = o.shadow_blur
+    if (typeof o.shadow_offset_x === 'number') shadowOffsetX.value = o.shadow_offset_x
+    if (typeof o.shadow_offset_y === 'number') shadowOffsetY.value = o.shadow_offset_y
+    if (typeof o.shadow_color === 'string') shadowColor.value = o.shadow_color
+    if (typeof o.shadow_opacity === 'number') shadowOpacity.value = Math.round(o.shadow_opacity * 100)
+    if (typeof o.stroke_enabled === 'boolean') strokeEnabled.value = o.stroke_enabled
+    if (typeof o.stroke_width === 'number') strokeWidth.value = o.stroke_width
+    if (typeof o.stroke_color === 'string') strokeColor.value = o.stroke_color
+
     applyPosterFilter()
     applyLogoPreference()
     success('Preset reloaded!')
@@ -260,7 +370,27 @@ const saveCurrentPreset = async () => {
     poster_filter: posterFilter.value,
     logo_preference: logoPreference.value,
     logo_mode: logoMode.value,
-    logo_hex: logoHex.value
+    logo_hex: logoHex.value,
+    text_overlay_enabled: textOverlayEnabled.value,
+    custom_text: customText.value,
+    font_family: fontFamily.value,
+    font_size: fontSize.value,
+    font_weight: fontWeight.value,
+    text_color: textColor.value,
+    text_align: textAlign.value,
+    text_transform: textTransform.value,
+    letter_spacing: letterSpacing.value,
+    line_height: lineHeight.value / 100,
+    position_y: positionY.value / 100,
+    shadow_enabled: shadowEnabled.value,
+    shadow_blur: shadowBlur.value,
+    shadow_offset_x: shadowOffsetX.value,
+    shadow_offset_y: shadowOffsetY.value,
+    shadow_color: shadowColor.value,
+    shadow_opacity: shadowOpacity.value / 100,
+    stroke_enabled: strokeEnabled.value,
+    stroke_width: strokeWidth.value,
+    stroke_color: strokeColor.value
   }
 
   await presetService.savePreset(backendOptions)
@@ -299,7 +429,27 @@ const saveAsNewPreset = async () => {
     poster_filter: posterFilter.value,
     logo_preference: logoPreference.value,
     logo_mode: logoMode.value,
-    logo_hex: logoHex.value
+    logo_hex: logoHex.value,
+    text_overlay_enabled: textOverlayEnabled.value,
+    custom_text: customText.value,
+    font_family: fontFamily.value,
+    font_size: fontSize.value,
+    font_weight: fontWeight.value,
+    text_color: textColor.value,
+    text_align: textAlign.value,
+    text_transform: textTransform.value,
+    letter_spacing: letterSpacing.value,
+    line_height: lineHeight.value / 100,
+    position_y: positionY.value / 100,
+    shadow_enabled: shadowEnabled.value,
+    shadow_blur: shadowBlur.value,
+    shadow_offset_x: shadowOffsetX.value,
+    shadow_offset_y: shadowOffsetY.value,
+    shadow_color: shadowColor.value,
+    shadow_opacity: shadowOpacity.value / 100,
+    stroke_enabled: strokeEnabled.value,
+    stroke_width: strokeWidth.value,
+    stroke_color: strokeColor.value
   }
 
   const newId = newPresetId.value.trim()
@@ -440,7 +590,35 @@ onMounted(() => {
 })
 
 // Watch for state changes and save
-watch([options, selectedTemplate, selectedPreset, posterFilter, logoPreference, logoMode, logoHex], () => {
+watch([
+  options,
+  selectedTemplate,
+  selectedPreset,
+  posterFilter,
+  logoPreference,
+  logoMode,
+  logoHex,
+  textOverlayEnabled,
+  customText,
+  fontFamily,
+  fontSize,
+  fontWeight,
+  textColor,
+  textAlign,
+  textTransform,
+  letterSpacing,
+  lineHeight,
+  positionY,
+  shadowEnabled,
+  shadowBlur,
+  shadowOffsetX,
+  shadowOffsetY,
+  shadowColor,
+  shadowOpacity,
+  strokeEnabled,
+  strokeWidth,
+  strokeColor
+], () => {
   saveEditorState()
 }, { deep: true })
 
@@ -496,6 +674,28 @@ watch(selectedPreset, (id) => {
       logoHex.value = o.logo_hex
     }
 
+    // Load text overlay settings
+    if (typeof o.text_overlay_enabled === 'boolean') textOverlayEnabled.value = o.text_overlay_enabled
+    if (typeof o.custom_text === 'string') customText.value = o.custom_text
+    if (typeof o.font_family === 'string') fontFamily.value = o.font_family
+    if (typeof o.font_size === 'number') fontSize.value = o.font_size
+    if (typeof o.font_weight === 'string') fontWeight.value = o.font_weight
+    if (typeof o.text_color === 'string') textColor.value = o.text_color
+    if (typeof o.text_align === 'string') textAlign.value = o.text_align
+    if (typeof o.text_transform === 'string') textTransform.value = o.text_transform
+    if (typeof o.letter_spacing === 'number') letterSpacing.value = o.letter_spacing
+    if (typeof o.line_height === 'number') lineHeight.value = Math.round(o.line_height * 100)
+    if (typeof o.position_y === 'number') positionY.value = Math.round(o.position_y * 100)
+    if (typeof o.shadow_enabled === 'boolean') shadowEnabled.value = o.shadow_enabled
+    if (typeof o.shadow_blur === 'number') shadowBlur.value = o.shadow_blur
+    if (typeof o.shadow_offset_x === 'number') shadowOffsetX.value = o.shadow_offset_x
+    if (typeof o.shadow_offset_y === 'number') shadowOffsetY.value = o.shadow_offset_y
+    if (typeof o.shadow_color === 'string') shadowColor.value = o.shadow_color
+    if (typeof o.shadow_opacity === 'number') shadowOpacity.value = Math.round(o.shadow_opacity * 100)
+    if (typeof o.stroke_enabled === 'boolean') strokeEnabled.value = o.stroke_enabled
+    if (typeof o.stroke_width === 'number') strokeWidth.value = o.stroke_width
+    if (typeof o.stroke_color === 'string') strokeColor.value = o.stroke_color
+
     applyPosterFilter()
     applyLogoPreference()
   }
@@ -503,7 +703,37 @@ watch(selectedPreset, (id) => {
 
 let previewTimer: ReturnType<typeof setTimeout> | null = null
 watch(
-  [bgUrl, logoUrl, options, posterFilter, logoPreference, logoMode, logoHex, selectedTemplate, selectedPreset],
+  [
+    bgUrl,
+    logoUrl,
+    options,
+    posterFilter,
+    logoPreference,
+    logoMode,
+    logoHex,
+    selectedTemplate,
+    selectedPreset,
+    textOverlayEnabled,
+    customText,
+    fontFamily,
+    fontSize,
+    fontWeight,
+    textColor,
+    textAlign,
+    textTransform,
+    letterSpacing,
+    lineHeight,
+    positionY,
+    shadowEnabled,
+    shadowBlur,
+    shadowOffsetX,
+    shadowOffsetY,
+    shadowColor,
+    shadowOpacity,
+    strokeEnabled,
+    strokeWidth,
+    strokeColor
+  ],
   () => {
     if (previewTimer) clearTimeout(previewTimer)
     previewTimer = setTimeout(() => {
@@ -592,7 +822,7 @@ watch(
             </div>
           </div>
 
-          <label class="field-label">
+          <label v-if="logoMode !== 'none'" class="field-label">
             Logo Preference
             <select v-model="logoPreference">
               <option value="first">First Available</option>
@@ -601,8 +831,8 @@ watch(
             </select>
           </label>
 
-          <div class="label-title">TMDb Logos</div>
-          <div class="thumb-strip logo-strip">
+          <div v-if="logoMode !== 'none'" class="label-title">TMDb Logos</div>
+          <div v-if="logoMode !== 'none'" class="thumb-strip logo-strip">
             <div
               v-for="l in filteredLogos"
               :key="l.url"
@@ -766,6 +996,33 @@ watch(
             </label>
           </div>
         </div>
+
+        <hr class="divider" />
+
+        <!-- Text Overlay -->
+        <TextOverlayPanel
+          v-model:enabled="textOverlayEnabled"
+          v-model:customText="customText"
+          v-model:fontFamily="fontFamily"
+          v-model:fontSize="fontSize"
+          v-model:fontWeight="fontWeight"
+          v-model:textColor="textColor"
+          v-model:textAlign="textAlign"
+          v-model:textTransform="textTransform"
+          v-model:letterSpacing="letterSpacing"
+          v-model:lineHeight="lineHeight"
+          v-model:positionY="positionY"
+          v-model:shadowEnabled="shadowEnabled"
+          v-model:shadowBlur="shadowBlur"
+          v-model:shadowOffsetX="shadowOffsetX"
+          v-model:shadowOffsetY="shadowOffsetY"
+          v-model:shadowColor="shadowColor"
+          v-model:shadowOpacity="shadowOpacity"
+          v-model:strokeEnabled="strokeEnabled"
+          v-model:strokeWidth="strokeWidth"
+          v-model:strokeColor="strokeColor"
+          :availableFonts="availableFonts"
+        />
 
         <hr class="divider" />
 

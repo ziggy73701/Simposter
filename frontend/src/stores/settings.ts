@@ -19,21 +19,33 @@ export type TVDBSettings = {
   comingSoon?: boolean
 }
 
+export type ImageQualitySettings = {
+  outputFormat: string
+  jpgQuality: number
+  pngCompression: number
+  webpQuality: number
+}
+
+export type PerformanceSettings = {
+  concurrentRenders: number
+  tmdbRateLimit: number
+  tvdbRateLimit: number
+  memoryLimit: number
+}
+
 export type UISettings = {
   theme: Theme
-  showBoundingBoxes: boolean
-  autoSave: boolean
   posterDensity: number
   defaultLabelsToRemove?: string[]
   saveLocation?: string
   plex?: PlexSettings
   tmdb?: TMDBSettings
   tvdb?: TVDBSettings
+  imageQuality?: ImageQualitySettings
+  performance?: PerformanceSettings
 }
 
 const theme = ref<Theme>('neon')
-const showBoundingBoxes = ref(true)
-const autoSave = ref(false)
 const posterDensity = ref(20)
 const defaultLabelsToRemove = ref<string[]>([])
 const loading = ref(false)
@@ -43,6 +55,8 @@ const saveLocation = ref<string>('/output')
 const plex = ref<PlexSettings>({ url: '', token: '', movieLibraryName: '' })
 const tmdb = ref<TMDBSettings>({ apiKey: '' })
 const tvdb = ref<TVDBSettings>({ apiKey: '', comingSoon: true })
+const imageQuality = ref<ImageQualitySettings>({ outputFormat: 'jpg', jpgQuality: 95, pngCompression: 6, webpQuality: 90 })
+const performance = ref<PerformanceSettings>({ concurrentRenders: 2, tmdbRateLimit: 40, tvdbRateLimit: 20, memoryLimit: 2048 })
 
 async function loadSettings() {
   loading.value = true
@@ -52,8 +66,6 @@ async function loadSettings() {
     if (!res.ok) throw new Error(`API error ${res.status}`)
     const data = (await res.json()) as UISettings
     theme.value = data.theme || 'neon'
-    showBoundingBoxes.value = !!data.showBoundingBoxes
-    autoSave.value = !!data.autoSave
     posterDensity.value = Number(data.posterDensity) || 20
     defaultLabelsToRemove.value = data.defaultLabelsToRemove || []
     loaded.value = true
@@ -65,6 +77,18 @@ async function loadSettings() {
     }
     tmdb.value = { apiKey: data.tmdb?.apiKey ?? '' }
     tvdb.value = { apiKey: data.tvdb?.apiKey ?? '', comingSoon: data.tvdb?.comingSoon ?? true }
+    imageQuality.value = {
+      outputFormat: data.imageQuality?.outputFormat ?? 'jpg',
+      jpgQuality: data.imageQuality?.jpgQuality ?? 95,
+      pngCompression: data.imageQuality?.pngCompression ?? 6,
+      webpQuality: data.imageQuality?.webpQuality ?? 90
+    }
+    performance.value = {
+      concurrentRenders: data.performance?.concurrentRenders ?? 2,
+      tmdbRateLimit: data.performance?.tmdbRateLimit ?? 40,
+      tvdbRateLimit: data.performance?.tvdbRateLimit ?? 20,
+      memoryLimit: data.performance?.memoryLimit ?? 2048
+    }
 
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Failed to load settings'
@@ -80,14 +104,14 @@ async function saveSettings() {
   try {
     const payload: UISettings = {
       theme: theme.value,
-      showBoundingBoxes: showBoundingBoxes.value,
-      autoSave: autoSave.value,
       posterDensity: posterDensity.value,
       defaultLabelsToRemove: defaultLabelsToRemove.value,
       saveLocation: saveLocation.value,
       plex: { ...plex.value },
       tmdb: { ...tmdb.value },
-      tvdb: { ...tvdb.value }
+      tvdb: { ...tvdb.value },
+      imageQuality: { ...imageQuality.value },
+      performance: { ...performance.value }
     }
     const res = await fetch(`${apiBase}/api/ui-settings`, {
       method: 'POST',
@@ -110,13 +134,13 @@ export function useSettingsStore() {
 
   return {
     theme,
-    showBoundingBoxes,
-    autoSave,
     posterDensity,
     defaultLabelsToRemove,
     plex,
     tmdb,
     tvdb,
+    imageQuality,
+    performance,
     loading,
     error,
     loaded,

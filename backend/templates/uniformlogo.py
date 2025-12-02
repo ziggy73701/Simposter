@@ -2,7 +2,7 @@
 
 from PIL import Image
 from ..config import settings
-from .universal import build_base_poster, _hex_to_rgb, _solid_color_logo
+from .universal import build_base_poster, _hex_to_rgb, _solid_color_logo, _render_text_overlay
 
 
 def render_uniform_logo(bg: Image.Image, logo: Image.Image, options: dict) -> Image.Image:
@@ -73,6 +73,15 @@ def render_uniform_logo(bg: Image.Image, logo: Image.Image, options: dict) -> Im
     y = cy - new_h // 2
 
     canvas.paste(logo_res, (x, y), logo_res)
+
+    # ------------- TEXT OVERLAY -------------
+    text_overlay_enabled = bool(options.get("text_overlay_enabled", False))
+    print(f"[DEBUG uniformlogo] Text overlay enabled: {text_overlay_enabled}")
+    if text_overlay_enabled:
+        custom_text = str(options.get("custom_text", ""))
+        print(f"[DEBUG uniformlogo] Custom text: '{custom_text}'")
+        if custom_text:
+            canvas = _render_text_overlay(canvas, custom_text, options)
 
     # Border?
     if options.get("border_enabled", False):
