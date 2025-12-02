@@ -4,6 +4,21 @@ const apiBase = import.meta.env.VITE_API_URL || window.location.origin
 
 export type Theme = 'neon' | 'slate' | 'dracula' | 'nord' | 'oled' | 'light'
 
+export type PlexSettings = {
+  url: string
+  token: string
+  movieLibraryName: string
+}
+
+export type TMDBSettings = {
+  apiKey: string
+}
+
+export type TVDBSettings = {
+  apiKey: string
+  comingSoon?: boolean
+}
+
 export type UISettings = {
   theme: Theme
   showBoundingBoxes: boolean
@@ -11,6 +26,9 @@ export type UISettings = {
   posterDensity: number
   defaultLabelsToRemove?: string[]
   saveLocation?: string
+  plex?: PlexSettings
+  tmdb?: TMDBSettings
+  tvdb?: TVDBSettings
 }
 
 const theme = ref<Theme>('neon')
@@ -22,6 +40,9 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const loaded = ref(false)
 const saveLocation = ref<string>('/output')
+const plex = ref<PlexSettings>({ url: '', token: '', movieLibraryName: '' })
+const tmdb = ref<TMDBSettings>({ apiKey: '' })
+const tvdb = ref<TVDBSettings>({ apiKey: '', comingSoon: true })
 
 async function loadSettings() {
   loading.value = true
@@ -37,6 +58,13 @@ async function loadSettings() {
     defaultLabelsToRemove.value = data.defaultLabelsToRemove || []
     loaded.value = true
     saveLocation.value = data.saveLocation ?? "/output"
+    plex.value = {
+      url: data.plex?.url ?? '',
+      token: data.plex?.token ?? '',
+      movieLibraryName: data.plex?.movieLibraryName ?? ''
+    }
+    tmdb.value = { apiKey: data.tmdb?.apiKey ?? '' }
+    tvdb.value = { apiKey: data.tvdb?.apiKey ?? '', comingSoon: data.tvdb?.comingSoon ?? true }
 
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Failed to load settings'
@@ -56,7 +84,10 @@ async function saveSettings() {
       autoSave: autoSave.value,
       posterDensity: posterDensity.value,
       defaultLabelsToRemove: defaultLabelsToRemove.value,
-      saveLocation: saveLocation.value
+      saveLocation: saveLocation.value,
+      plex: { ...plex.value },
+      tmdb: { ...tmdb.value },
+      tvdb: { ...tvdb.value }
     }
     const res = await fetch(`${apiBase}/api/ui-settings`, {
       method: 'POST',
@@ -83,6 +114,9 @@ export function useSettingsStore() {
     autoSave,
     posterDensity,
     defaultLabelsToRemove,
+    plex,
+    tmdb,
+    tvdb,
     loading,
     error,
     loaded,

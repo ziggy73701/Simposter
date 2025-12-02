@@ -11,28 +11,40 @@ const { movies: moviesCache, moviesLoaded } = useMovies()
 // Local state that will only be applied when save is clicked
 const localTheme = ref<Theme>('neon')
 const localPosterDensity = ref(20)
-const localAutoSave = ref(false)
-const localShowBoundingBoxes = ref(true)
 const localSaveLocation = ref('')
 const localDefaultLabelsToRemove = ref<string[]>([])
+const localPlexUrl = ref('')
+const localPlexToken = ref('')
+const localPlexLibrary = ref('')
+const localTmdbApiKey = ref('')
+const localTvdbApiKey = ref('')
 
 const loadLocalSettings = () => {
   localTheme.value = settings.theme.value
   localPosterDensity.value = settings.posterDensity.value
-  localAutoSave.value = settings.autoSave.value
-  localShowBoundingBoxes.value = settings.showBoundingBoxes.value
   localSaveLocation.value = settings.saveLocation.value
   localDefaultLabelsToRemove.value = [...settings.defaultLabelsToRemove.value]
+  // Connection settings
+  localPlexUrl.value = settings.plex.value.url
+  localPlexToken.value = settings.plex.value.token
+  localPlexLibrary.value = settings.plex.value.movieLibraryName
+  localTmdbApiKey.value = settings.tmdb.value.apiKey
+  localTvdbApiKey.value = settings.tvdb.value.apiKey
 }
 
 const saveSettings = async () => {
   // Apply local settings to the store
   settings.theme.value = localTheme.value
   settings.posterDensity.value = localPosterDensity.value
-  settings.autoSave.value = localAutoSave.value
-  settings.showBoundingBoxes.value = localShowBoundingBoxes.value
   settings.saveLocation.value = localSaveLocation.value
   settings.defaultLabelsToRemove.value = [...localDefaultLabelsToRemove.value]
+  settings.plex.value = {
+    url: localPlexUrl.value,
+    token: localPlexToken.value,
+    movieLibraryName: localPlexLibrary.value
+  }
+  settings.tmdb.value = { apiKey: localTmdbApiKey.value }
+  settings.tvdb.value = { apiKey: localTvdbApiKey.value, comingSoon: settings.tvdb.value.comingSoon }
 
   // Save to backend
   await settings.save()
@@ -152,56 +164,161 @@ const isLabelSelected = (label: string) => {
 </script>
 
 <template>
-  <div class="view glass" @click.stop @mouseup.stop @mousedown.stop @select.stop @selectstart.stop>
-    <h2>Settings</h2>
-    <div class="grid">
-      <label>
-        <span>Theme</span>
-        <select v-model="localTheme">
-          <option value="neon">Neon</option>
-          <option value="slate">Slate</option>
-          <option value="dracula">Dracula</option>
-          <option value="nord">Nord</option>
-          <option value="oled">OLED</option>
-          <option value="light">Light</option>
-        </select>
-      </label>
-      <label>
-        <span>Movies per page</span>
-        <input
-          v-model.number="localPosterDensity"
-          type="number"
-          min="5"
-          max="100"
-          @select.stop
-          @selectstart.stop
-        />
-      </label>
-      <label class="inline">
-        <input v-model="localAutoSave" type="checkbox" />
-        <span>Autosave renders</span>
-      </label>
-      <label class="inline">
-        <input v-model="localShowBoundingBoxes" type="checkbox" />
-        <span>Show bounding boxes (debug)</span>
-      </label>
-      <label @mousedown.stop @click.stop>
-        <span>Save Location</span>
-        <input
-          v-model="localSaveLocation"
-          type="text"
-          placeholder="/output/{title} {year}/poster"
-          @mousedown.stop
-          @click.stop
-          @mouseup.stop
-          @select.stop
-          @selectstart.stop
-        />
-        <span class="help-text">Available variables: {title}, {year}, {key}</span>
-      </label>
+  <div class="view" @click.stop @mouseup.stop @mousedown.stop @select.stop @selectstart.stop>
+    <div class="settings-header">
+      <h2>Settings</h2>
+      <p class="header-subtitle">Customize your Simposter experience</p>
     </div>
-    <div v-if="allLabels.length > 0" class="labels-section">
-      <h3>Default Labels to Remove</h3>
+
+    <div class="settings-section">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+        Appearance
+      </h3>
+      <div class="grid">
+        <label>
+          <span class="label-text">Theme</span>
+          <select v-model="localTheme">
+            <option value="neon">Neon</option>
+            <option value="slate">Slate</option>
+            <option value="dracula">Dracula</option>
+            <option value="nord">Nord</option>
+            <option value="oled">OLED</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+        <label>
+          <span class="label-text">Movies per page</span>
+          <input
+            v-model.number="localPosterDensity"
+            type="number"
+            min="5"
+            max="100"
+            @select.stop
+            @selectstart.stop
+          />
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+          <line x1="12" y1="22.08" x2="12" y2="12"/>
+        </svg>
+        Output
+      </h3>
+      <div class="grid">
+        <label class="full-width" @mousedown.stop @click.stop>
+          <span class="label-text">Save Location</span>
+          <input
+            v-model="localSaveLocation"
+            type="text"
+            placeholder="/output/{title} {year}/poster"
+            @mousedown.stop
+            @click.stop
+            @mouseup.stop
+            @select.stop
+            @selectstart.stop
+          />
+          <span class="help-text">Available variables: {title}, {year}, {key}</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        Connections
+      </h3>
+      <div class="grid connections">
+        <label>
+          <span class="label-text">Plex URL</span>
+          <input
+            v-model="localPlexUrl"
+            type="text"
+            placeholder="http://localhost:32400"
+            @mousedown.stop
+            @click.stop
+            @mouseup.stop
+            @select.stop
+            @selectstart.stop
+          />
+        </label>
+        <label>
+          <span class="label-text">Plex Token</span>
+          <input
+            v-model="localPlexToken"
+            type="password"
+            placeholder="Plex token"
+            @mousedown.stop
+            @click.stop
+            @mouseup.stop
+            @select.stop
+            @selectstart.stop
+          />
+          <span class="help-text">Use the Plex token or future auto-discovery once available.</span>
+        </label>
+        <label>
+          <span class="label-text">Plex Movie Library</span>
+          <input
+            v-model="localPlexLibrary"
+            type="text"
+            placeholder="Movies or 1"
+            @mousedown.stop
+            @click.stop
+            @mouseup.stop
+            @select.stop
+            @selectstart.stop
+          />
+        </label>
+        <label>
+          <span class="label-text">TMDb API Key</span>
+          <input
+            v-model="localTmdbApiKey"
+            type="password"
+            placeholder="TMDb API key"
+            @mousedown.stop
+            @click.stop
+            @mouseup.stop
+            @select.stop
+            @selectstart.stop
+          />
+        </label>
+        <label>
+          <span class="label-text">TVDB API Key</span>
+          <input
+            v-model="localTvdbApiKey"
+            type="password"
+            placeholder="TVDB API key (coming soon)"
+            @mousedown.stop
+            @click.stop
+            @mouseup.stop
+            @select.stop
+            @selectstart.stop
+          />
+          <span class="help-text">Coming soon—value is saved for future use.</span>
+        </label>
+      </div>
+    </div>
+
+    <div v-if="allLabels.length > 0" class="settings-section labels-section">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+          <line x1="7" y1="7" x2="7.01" y2="7"/>
+        </svg>
+        Default Labels to Remove
+      </h3>
       <p class="section-subtitle">When sending to Plex, these labels will be removed by default</p>
       <div class="labels-grid">
         <label v-for="label in allLabels" :key="label" class="label-checkbox">
@@ -212,98 +329,206 @@ const isLabelSelected = (label: string) => {
     </div>
 
     <div class="actions">
-      <button @click="saveSettings">Save</button>
-      <button @click="clearCache" class="secondary">Clear Cache</button>
-      <button @click="scanLibrary" class="secondary">Scan Library</button>
-      <span class="status">{{ saved }}</span>
+      <button @click="saveSettings" class="primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <polyline points="17 21 17 13 7 13 7 21"/>
+          <polyline points="7 3 7 8 15 8"/>
+        </svg>
+        Save Settings
+      </button>
+      <button @click="clearCache" class="secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="1 4 1 10 7 10"/>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+        </svg>
+        Clear Cache
+      </button>
+      <button @click="scanLibrary" class="secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+        Scan Library
+      </button>
+      <span v-if="saved" class="status">{{ saved }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
 .view {
-  padding: 16px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.settings-header {
+  margin-bottom: 8px;
+}
+
+.settings-header h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(120deg, #3dd6b7, #5b8dee);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.header-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.settings-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  transition: all 0.2s;
+}
+
+.settings-section:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(61, 214, 183, 0.15);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #eef2ff;
+}
+
+.section-title svg {
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.connections {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 label {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
   color: #dbe4ff;
-}
-
-label.label-checkbox {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
-  color: #dbe4ff;
-  cursor: pointer;
   transition: all 0.2s;
 }
 
-label.label-checkbox:hover {
+label:hover {
   background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(61, 214, 183, 0.3);
+  border-color: rgba(61, 214, 183, 0.2);
 }
 
-.inline {
+.label-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #c9d6ff;
+}
+
+label.inline {
   flex-direction: row;
   align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+label.inline input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
+label.full-width {
+  grid-column: 1 / -1;
 }
 
 input,
 select {
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.2);
   color: #e6edff;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: rgba(61, 214, 183, 0.5);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 3px rgba(61, 214, 183, 0.1);
+}
+
+input[type="number"] {
+  appearance: textfield;
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  accent-color: var(--accent);
 }
 
 .labels-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.labels-section h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #eef2ff;
+  background: rgba(61, 214, 183, 0.03);
+  border-color: rgba(61, 214, 183, 0.15);
 }
 
 .section-subtitle {
-  margin: 0;
-  font-size: 12px;
+  margin: 0 0 16px 0;
+  font-size: 13px;
   color: var(--muted);
+  font-weight: 400;
 }
 
 .labels-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.label-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.label-checkbox:hover {
+  background: rgba(61, 214, 183, 0.08);
+  border-color: rgba(61, 214, 183, 0.3);
 }
 
 .label-checkbox input {
@@ -311,46 +536,112 @@ select {
   width: auto;
   padding: 0;
   margin: 0;
+  flex-shrink: 0;
 }
 
 .label-checkbox span {
   font-size: 13px;
   flex: 1;
+  user-select: none;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding-top: 8px;
+  flex-wrap: wrap;
 }
 
 button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 12px 18px;
   background: rgba(255, 255, 255, 0.05);
   color: #dce6ff;
   cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+button svg {
+  flex-shrink: 0;
+}
+
+button.primary {
+  background: linear-gradient(135deg, rgba(61, 214, 183, 0.2), rgba(91, 141, 238, 0.15));
+  border-color: rgba(61, 214, 183, 0.4);
+  color: #eef2ff;
+}
+
+button.primary:hover {
+  background: linear-gradient(135deg, rgba(61, 214, 183, 0.3), rgba(91, 141, 238, 0.25));
+  border-color: rgba(61, 214, 183, 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(61, 214, 183, 0.15);
 }
 
 button.secondary {
   background: rgba(255, 255, 255, 0.02);
-  color: #aab4cc;
+  color: #b8c5e0;
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 button.secondary:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
 }
 
 .status {
-  color: #a9b4d6;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 8px;
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .help-text {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
-  opacity: 0.7;
+  opacity: 0.8;
   font-style: italic;
+  margin-top: -2px;
 }
 
+@media (max-width: 768px) {
+  .view {
+    padding: 16px;
+  }
+
+  .grid,
+  .connections {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  button {
+    width: 100%;
+    justify-content: center;
+  }
+}
 </style>

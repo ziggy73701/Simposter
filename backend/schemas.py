@@ -42,6 +42,21 @@ class PresetDeleteRequest(BaseModel):
     preset_id: str
 
 
+class PlexSettings(BaseModel):
+    url: str = ""
+    token: str = ""
+    movieLibraryName: str = ""
+
+
+class TMDBSettings(BaseModel):
+    apiKey: str = ""
+
+
+class TVDBSettings(BaseModel):
+    apiKey: str = ""
+    comingSoon: bool = True
+
+
 class UISettings(BaseModel):
     theme: str = "neon"
     showBoundingBoxes: bool = True
@@ -49,6 +64,9 @@ class UISettings(BaseModel):
     posterDensity: int = 20
     saveLocation: str = "/output"
     defaultLabelsToRemove: List[str] = Field(default_factory=list)
+    plex: PlexSettings = Field(default_factory=PlexSettings)
+    tmdb: TMDBSettings = Field(default_factory=TMDBSettings)
+    tvdb: TVDBSettings = Field(default_factory=TVDBSettings)
 
 class PlexSendRequest(BaseModel):
     template_id: str
