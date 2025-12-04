@@ -304,7 +304,6 @@ def api_batch(req: BatchRequest):
                 yaml.dump(
                     data,
                     yaml_path.open("w", encoding="utf-8"),
-                    Dumper=_QuotedStringDumper,
                     # Preserve insertion order to match the order movies were processed
                     # so the resulting YAML remains aligned with user expectations.
                     sort_keys=False,
