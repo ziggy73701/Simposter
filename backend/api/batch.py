@@ -248,7 +248,9 @@ def api_batch(req: BatchRequest):
                 yaml.safe_dump(
                     data,
                     yaml_path.open("w", encoding="utf-8"),
-                    sort_keys=True,
+                    # Preserve insertion order to match the order movies were processed
+                    # so the resulting YAML remains aligned with user expectations.
+                    sort_keys=False,
                     allow_unicode=True,
                     default_flow_style=False,
                 )
