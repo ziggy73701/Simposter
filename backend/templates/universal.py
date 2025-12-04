@@ -1,5 +1,5 @@
 # backend/templates/universal.py
-# V1.3.1 - behaves the same as your old V1.2 universal renderer
+# Universal template with full creative controls for cinematic posters
 
 from typing import Dict, Any, Optional
 from PIL import Image, ImageDraw, ImageOps, ImageEnhance, ImageFilter, ImageChops, ImageFont
@@ -428,7 +428,7 @@ def build_base_poster(
     options: Dict[str, Any] | None,
 ) -> Image.Image:
     """
-    This reproduces the V1.2 look up to (but not including) logo + border.
+    Base poster builder with matte, fade, vignette, and grain effects.
     Used by:
       - universal template
       - uniformlogo template
@@ -505,10 +505,10 @@ def build_base_poster(
         base_rgb = _add_vignette(base_rgb, vignette_strength)
     base_rgb = _add_grain(base_rgb, grain_amount)
 
-    # --- V1.2 WASHOUT PATCH (fast & identical to old look) ---
+    # --- WASHOUT EFFECT (neutral grey tone overlay) ---
     v12_wash = float(options.get("v12_wash_strength", 0.0))  # Recommended: 0.08–0.15
     if v12_wash > 0:
-        # neutral grey tone similar to old V1.2 blend result
+        # Neutral grey tone for cinematic washout effect
         grey_layer = Image.new("RGB", (canvas_w, canvas_h), (32, 32, 32))
         base_rgb = Image.blend(base_rgb, grey_layer, v12_wash)
 
@@ -516,7 +516,7 @@ def build_base_poster(
 
 
 # ============================================================
-# Universal template (V1.2 behavior)
+# Universal template
 # ============================================================
 
 def render_universal(
@@ -526,7 +526,7 @@ def render_universal(
 ) -> Image.Image:
     """
     Primary "default" template renderer.
-    Matches the old V1.2 `render()` function’s behavior.
+    Full creative controls for cinematic posters with matte, fade, vignette, and effects.
     """
 
     if options is None:
