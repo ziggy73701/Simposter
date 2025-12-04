@@ -1,6 +1,12 @@
 from fastapi import APIRouter
 from ..schemas import BatchRequest
-from ..config import settings, plex_remove_label, logger, get_movie_tmdb_id
+from ..config import (
+    settings,
+    plex_remove_label,
+    logger,
+    get_movie_tmdb_id,
+    load_presets,
+)
 from ..tmdb_client import get_images_for_movie, get_movie_details
 from ..rendering import render_poster_image
 from io import BytesIO
@@ -15,8 +21,30 @@ def api_batch(req: BatchRequest):
 
     results = []
 
-    poster_filter = req.options.get("poster_filter", "all")
-    logo_preference = req.options.get("logo_preference", "first")
+    render_options = dict(req.options or {})
+
+    poster_filter = render_options.get("poster_filter", "all")
+    logo_preference = render_options.get("logo_preference", "first")
+
+    if req.preset_id:
+        presets = load_presets()
+        template_presets = presets.get(req.template_id, {}).get("presets", [])
+        preset = next((p for p in template_presets if p.get("id") == req.preset_id), None)
+
+        if preset:
+            preset_options = preset.get("options", {})
+            render_options = {**render_options, **preset_options}
+            poster_filter = render_options.get("poster_filter", poster_filter)
+            logo_preference = render_options.get("logo_preference", logo_preference)
+            logger.debug(
+                "[BATCH] Applied preset '%s' options: %s", req.preset_id, preset_options
+            )
+        else:
+            logger.warning(
+                "[BATCH] Preset '%s' not found for template '%s'", req.preset_id, req.template_id
+            )
+
+    base_render_options = dict(render_options)
 
     for rating_key in req.rating_keys:
         try:
@@ -49,8 +77,12 @@ def api_batch(req: BatchRequest):
             # ---------------------------
             # Auto-select assets
             # ---------------------------
+            render_options = dict(base_render_options)
+
+            logo_mode = render_options.get("logo_mode", "first")
+
             poster = pick_poster(posters, poster_filter)
-            logo = pick_logo(logos, logo_preference)
+            logo = pick_logo(logos, logo_preference) if logo_mode != "none" else None
             
             if not poster:
                 raise Exception("No valid poster found.")
@@ -64,9 +96,9 @@ def api_batch(req: BatchRequest):
             # Render for EACH MOVIE
             # ---------------------------
             # Add movie details to options for template variable substitution
-            render_options = dict(req.options)
             render_options["movie_title"] = movie_details.get("title", "")
-            render_options["movie_year"] = movie_details.get("year", "")
+            if movie_details.get("year"):
+                render_options["movie_year"] = str(movie_details.get("year"))
 
             img = render_poster_image(
                 req.template_id,
