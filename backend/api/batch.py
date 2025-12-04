@@ -22,6 +22,49 @@ from ..tmdb_client import get_images_for_movie, get_movie_details
 router = APIRouter()
 
 
+class _QuotedStringDumper(yaml.SafeDumper):
+    """Dumper that quotes scalars needing extra clarity (e.g. numeric titles)."""
+
+
+def _represent_str(dumper, data: str):
+    should_quote = False
+
+    if data:
+        should_quote = data[0].isdigit() or data[0].isspace() or data[-1].isspace()
+
+    if not should_quote:
+        should_quote = any(
+            ch in data
+            for ch in [
+                ":",
+                "#",
+                "{",
+                "}",
+                "[",
+                "]",
+                ",",
+                "&",
+                "*",
+                "?",
+                "|",
+                "-",
+                "<",
+                ">",
+                "=",
+                "!",
+                "%",
+                "@",
+                "`",
+            ]
+        )
+
+    style = '"' if should_quote else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
+
+
+_QuotedStringDumper.add_representer(str, _represent_str)
+
+
 def _normalize_bucket(title: str) -> str:
     """Derive the bucket letter/number for YAML output."""
 
@@ -36,6 +79,16 @@ def _normalize_bucket(title: str) -> str:
             return "0"
 
     return "_"
+
+
+def _normalize_year(year_value):
+    if isinstance(year_value, int):
+        return year_value
+
+    if isinstance(year_value, str) and year_value.strip().isdigit():
+        return int(year_value.strip())
+
+    return None
 
 
 def _poster_filename(title: str, year: str | int | None) -> tuple[str, str]:
@@ -138,8 +191,9 @@ def api_batch(req: BatchRequest):
             # ---------------------------
             # Add movie details to options for template variable substitution
             render_options["movie_title"] = movie_details.get("title", "")
-            if movie_details.get("year"):
-                render_options["movie_year"] = str(movie_details.get("year"))
+            movie_year = _normalize_year(movie_details.get("year"))
+            if movie_year is not None:
+                render_options["movie_year"] = str(movie_year)
 
             img = render_poster_image(
                 req.template_id,
@@ -157,7 +211,7 @@ def api_batch(req: BatchRequest):
 
             # Get movie info for filename
             movie_title = movie_details.get("title", rating_key)
-            movie_year = movie_details.get("year", "")
+            movie_year = movie_year if movie_year is not None else _normalize_year(movie_details.get("year"))
 
             if should_save_image:
                 folder_letter, filename = _poster_filename(movie_title, movie_year)
@@ -209,8 +263,10 @@ def api_batch(req: BatchRequest):
                 bucket = _normalize_bucket(movie_title)
                 entry = {
                     "title": movie_title,
-                    "year": movie_year,
                 }
+
+                if movie_year is not None:
+                    entry["year"] = movie_year
 
                 if poster_relative_path:
                     entry["file_poster"] = poster_relative_path
@@ -245,10 +301,13 @@ def api_batch(req: BatchRequest):
             data = {"metadata": merged_metadata}
 
             try:
-                yaml.safe_dump(
+                yaml.dump(
                     data,
                     yaml_path.open("w", encoding="utf-8"),
-                    sort_keys=True,
+                    Dumper=_QuotedStringDumper,
+                    # Preserve insertion order to match the order movies were processed
+                    # so the resulting YAML remains aligned with user expectations.
+                    sort_keys=False,
                     allow_unicode=True,
                     default_flow_style=False,
                 )
