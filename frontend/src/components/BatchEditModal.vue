@@ -109,6 +109,10 @@
             <input type="checkbox" v-model="saveLocally" />
             Save locally
           </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="exportYaml" />
+            Export YAML metadata
+          </label>
           <label v-if="sendToPlex" class="checkbox-label sub-option">
             <input type="checkbox" v-model="autoRemoveLabels" />
             Auto-remove old labels after send
@@ -121,7 +125,7 @@
         <button
           class="btn-send"
           @click="processBatch"
-          :disabled="checkedMovies.size === 0 || !selectedTemplate || (!sendToPlex && !saveLocally) || isSending"
+          :disabled="checkedMovies.size === 0 || !selectedTemplate || (!sendToPlex && !saveLocally && !exportYaml) || isSending"
         >
           <span v-if="!isSending">Process {{ checkedMovies.size }} Movies</span>
           <span v-else>Processing...</span>
@@ -178,6 +182,7 @@ const currentIndex = ref(0);
 const autoRemoveLabels = ref(false);
 const sendToPlex = ref(true);
 const saveLocally = ref(false);
+const exportYaml = ref(false);
 const searchQuery = ref("");
 const moviesListRef = ref<HTMLElement | null>(null);
 const letterAnchors = ref<Record<string, HTMLElement | null>>({});
@@ -297,8 +302,8 @@ const processBatch = async () => {
     return;
   }
 
-  if (!sendToPlex.value && !saveLocally.value) {
-    error("Please select at least one action (Send to Plex or Save locally)");
+  if (!sendToPlex.value && !saveLocally.value && !exportYaml.value) {
+    error("Please select at least one action (Send to Plex, Save locally, or Export YAML)");
     return;
   }
 
@@ -318,6 +323,7 @@ const processBatch = async () => {
       },
       send_to_plex: sendToPlex.value,
       save_locally: saveLocally.value,
+      generate_yaml: exportYaml.value,
       labels: autoRemoveLabels.value && sendToPlex.value
         ? ["old_poster", "temp", "edited"] // Common labels to remove
         : [],
@@ -350,12 +356,20 @@ const processBatch = async () => {
     await response.json();
 
     let message = `Successfully processed ${checkedMovies.value.size} movies`;
-    if (sendToPlex.value && saveLocally.value) {
+    if (sendToPlex.value && saveLocally.value && exportYaml.value) {
+      message += " (sent to Plex, saved locally, and exported YAML)";
+    } else if (sendToPlex.value && saveLocally.value) {
       message += " (sent to Plex and saved locally)";
+    } else if (sendToPlex.value && exportYaml.value) {
+      message += " (sent to Plex and exported YAML)";
+    } else if (saveLocally.value && exportYaml.value) {
+      message += " (saved locally and exported YAML)";
     } else if (sendToPlex.value) {
       message += " (sent to Plex)";
     } else if (saveLocally.value) {
       message += " (saved locally)";
+    } else if (exportYaml.value) {
+      message += " (exported YAML)";
     }
     success(message);
 

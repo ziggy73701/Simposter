@@ -111,6 +111,7 @@ class BatchRequest(BaseModel):
     options: dict
     send_to_plex: bool = False
     save_locally: bool = False
+    generate_yaml: bool = False
     labels: List[str] = []
 
 

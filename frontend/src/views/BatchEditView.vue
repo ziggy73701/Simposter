@@ -67,6 +67,7 @@ const selectedTemplate = ref('')
 const selectedPreset = ref('')
 const sendToPlex = ref(true)
 const saveLocally = ref(false)
+const exportYaml = ref(false)
 const labelsToRemove = ref<Set<string>>(new Set())
 const processing = ref(false)
 const currentIndex = ref(0)
@@ -298,8 +299,8 @@ const processBatch = async () => {
     return
   }
 
-  if (!sendToPlex.value && !saveLocally.value) {
-    showError('Please select at least one action (Send to Plex or Save locally)')
+  if (!sendToPlex.value && !saveLocally.value && !exportYaml.value) {
+    showError('Please select at least one action (Send to Plex, Save locally, or Export YAML)')
     return
   }
 
@@ -319,6 +320,7 @@ const processBatch = async () => {
       },
       send_to_plex: sendToPlex.value,
       save_locally: saveLocally.value,
+      generate_yaml: exportYaml.value,
       labels: sendToPlex.value ? Array.from(labelsToRemove.value) : []
     }
 
@@ -346,12 +348,20 @@ const processBatch = async () => {
     await response.json()
 
     let message = `Successfully processed ${selectedMovies.value.size} movies`
-    if (sendToPlex.value && saveLocally.value) {
+    if (sendToPlex.value && saveLocally.value && exportYaml.value) {
+      message += ' (sent to Plex, saved locally, and exported YAML)'
+    } else if (sendToPlex.value && saveLocally.value) {
       message += ' (sent to Plex and saved locally)'
+    } else if (sendToPlex.value && exportYaml.value) {
+      message += ' (sent to Plex and exported YAML)'
+    } else if (saveLocally.value && exportYaml.value) {
+      message += ' (saved locally and exported YAML)'
     } else if (sendToPlex.value) {
       message += ' (sent to Plex)'
     } else if (saveLocally.value) {
       message += ' (saved locally)'
+    } else if (exportYaml.value) {
+      message += ' (exported YAML)'
     }
     success(message)
 
@@ -531,6 +541,10 @@ onMounted(async () => {
             <input type="checkbox" v-model="saveLocally" />
             Save locally
           </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="exportYaml" />
+            Export YAML metadata
+          </label>
         </div>
 
         <!-- Label Removal Selector -->
@@ -555,7 +569,7 @@ onMounted(async () => {
         <button
           class="btn-process"
           @click="processBatch"
-          :disabled="selectedMovies.size === 0 || !selectedTemplate || !selectedPreset || (!sendToPlex && !saveLocally) || processing"
+          :disabled="selectedMovies.size === 0 || !selectedTemplate || !selectedPreset || (!sendToPlex && !saveLocally && !exportYaml) || processing"
         >
           <span v-if="!processing">Process {{ selectedMovies.size }} Movies</span>
           <span v-else>Processing {{ currentIndex }} / {{ selectedMovies.size }}...</span>
