@@ -1,25 +1,64 @@
+import os
+from collections import defaultdict
+from io import BytesIO
+from pathlib import Path
+
+import requests
+import yaml
 from fastapi import APIRouter
-from ..schemas import BatchRequest
+
+from backend.assets.selection import pick_logo, pick_poster
 from ..config import (
-    settings,
-    plex_remove_label,
-    logger,
     get_movie_tmdb_id,
     load_presets,
+    logger,
+    plex_remove_label,
+    settings,
 )
-from ..tmdb_client import get_images_for_movie, get_movie_details
 from ..rendering import render_poster_image
-from io import BytesIO
-import requests
-from backend.assets.selection import pick_poster, pick_logo
+from ..schemas import BatchRequest
+from ..tmdb_client import get_images_for_movie, get_movie_details
 
 router = APIRouter()
+
+
+def _normalize_bucket(title: str) -> str:
+    """Derive the bucket letter/number for YAML output."""
+
+    trimmed_title = (title or "").lstrip()
+    if trimmed_title.lower().startswith("the "):
+        trimmed_title = trimmed_title[4:].lstrip()
+
+    for char in trimmed_title:
+        if char.isalpha():
+            return char.lower()
+        if char.isdigit():
+            return "0"
+
+    return "_"
+
+
+def _poster_filename(title: str, year: str | int | None) -> tuple[str, str]:
+    """Return the folder letter and sanitized filename for poster output."""
+
+    trimmed_title = title.lstrip()
+    if trimmed_title.lower().startswith("the "):
+        trimmed_title = trimmed_title[4:].lstrip()
+
+    folder_letter = next((c for c in trimmed_title if c.isalpha()), "_")
+    folder_letter = folder_letter.lower() if folder_letter.isalpha() else "_"
+
+    safe_title = "".join(c for c in title if c.isalnum() or c in " _-()")
+    filename = f"{safe_title} ({year}).jpg" if year else f"{safe_title}.jpg"
+
+    return folder_letter, filename
 
 
 @router.post("/batch")
 def api_batch(req: BatchRequest):
 
     results = []
+    yaml_entries: dict[str, dict] = defaultdict(dict)
 
     render_options = dict(req.options or {})
 
@@ -45,6 +84,8 @@ def api_batch(req: BatchRequest):
             )
 
     base_render_options = dict(render_options)
+
+    yaml_root = Path(settings.OUTPUT_ROOT) / "batch_yaml"
 
     for rating_key in req.rating_keys:
         try:
@@ -111,26 +152,15 @@ def api_batch(req: BatchRequest):
             # Save locally (if requested)
             # ---------------------------
             save_path = None
-            if req.save_locally:
-                import os
-                from pathlib import Path
+            poster_relative_path = None
+            should_save_image = req.save_locally or req.generate_yaml
 
-                # Get movie info for filename
-                movie_title = movie_details.get("title", rating_key)
-                movie_year = movie_details.get("year", "")
+            # Get movie info for filename
+            movie_title = movie_details.get("title", rating_key)
+            movie_year = movie_details.get("year", "")
 
-                # Derive folder letter ignoring a leading "The "
-                trimmed_title = movie_title.lstrip()
-                if trimmed_title.lower().startswith("the "):
-                    trimmed_title = trimmed_title[4:]
-                trimmed_title = trimmed_title.lstrip()
-
-                folder_letter = next((c for c in trimmed_title if c.isalpha()), "_")
-                folder_letter = folder_letter.lower() if folder_letter.isalpha() else "_"
-
-                # Sanitize filename
-                safe_title = "".join(c for c in movie_title if c.isalnum() or c in " _-()")
-                filename = f"{safe_title} ({movie_year}).jpg" if movie_year else f"{safe_title}.jpg"
+            if should_save_image:
+                folder_letter, filename = _poster_filename(movie_title, movie_year)
 
                 # Save to output directory
                 out_dir = os.path.join(settings.OUTPUT_ROOT, "batch", folder_letter)
@@ -138,6 +168,7 @@ def api_batch(req: BatchRequest):
                 save_path = os.path.join(out_dir, filename)
 
                 img.convert("RGB").save(save_path, "JPEG", quality=95)
+                poster_relative_path = os.path.relpath(save_path, settings.OUTPUT_ROOT).replace(os.sep, "/")
                 logger.info(f"[BATCH] Saved locally: {save_path}")
 
             # ---------------------------
@@ -173,6 +204,19 @@ def api_batch(req: BatchRequest):
                 result["save_path"] = save_path
             results.append(result)
 
+            # Collect YAML metadata if requested
+            if req.generate_yaml:
+                bucket = _normalize_bucket(movie_title)
+                entry = {
+                    "title": movie_title,
+                    "year": movie_year,
+                }
+
+                if poster_relative_path:
+                    entry["file_poster"] = poster_relative_path
+
+                yaml_entries[bucket][movie_title] = entry
+
         except Exception as e:
             logger.error(f"[BATCH] Error for {rating_key}\n{e}")
             results.append({
@@ -181,4 +225,36 @@ def api_batch(req: BatchRequest):
                 "error": str(e),
             })
 
-    return {"results": results}
+    yaml_files_written: list[str] = []
+    if req.generate_yaml and yaml_entries:
+        yaml_root.mkdir(parents=True, exist_ok=True)
+
+        for bucket, entries in yaml_entries.items():
+            yaml_path = yaml_root / f"{bucket}.yml"
+
+            existing_metadata = {}
+            if yaml_path.exists():
+                try:
+                    loaded = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+                    if isinstance(loaded, dict):
+                        existing_metadata = loaded.get("metadata", {}) or {}
+                except Exception as e:
+                    logger.warning("[BATCH] Failed to read YAML %s: %s", yaml_path, e)
+
+            merged_metadata = {**existing_metadata, **entries}
+            data = {"metadata": merged_metadata}
+
+            try:
+                yaml.safe_dump(
+                    data,
+                    yaml_path.open("w", encoding="utf-8"),
+                    sort_keys=True,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                )
+                yaml_files_written.append(str(yaml_path))
+                logger.info("[BATCH] Wrote YAML: %s", yaml_path)
+            except Exception as e:
+                logger.error("[BATCH] Failed to write YAML %s: %s", yaml_path, e)
+
+    return {"results": results, "yaml_files": yaml_files_written}
