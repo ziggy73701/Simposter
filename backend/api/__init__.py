@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from . import (
     presets,
+    templates,
     movies,
     plexsend,
     preview,
@@ -16,6 +17,7 @@ from . import (
 router = APIRouter()
 
 router.include_router(presets.router)
+router.include_router(templates.router)
 router.include_router(movies.router)
 router.include_router(plexsend.router)
 router.include_router(preview.router)

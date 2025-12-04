@@ -108,3 +108,25 @@ def get_images_for_movie(tmdb_id: int) -> Dict[str, List[Dict[str, Any]]]:
         "backdrops": backdrops,
         "logos": logos,
     }
+
+
+def get_movie_details(tmdb_id: int) -> Dict[str, Any]:
+    """
+    Fetch movie details from TMDb (title, year, etc.)
+    """
+    logger.info("[TMDB] Fetching movie details tmdb_id=%s", tmdb_id)
+    data = _tmdb_get(f"/movie/{tmdb_id}", {})
+
+    title = data.get("title", "")
+    original_title = data.get("original_title", "")
+    release_date = data.get("release_date", "")  # Format: YYYY-MM-DD
+    year = release_date.split("-")[0] if release_date else ""
+
+    logger.debug("[TMDB] tmdb_id=%s title='%s' year=%s", tmdb_id, title, year)
+
+    return {
+        "title": title,
+        "original_title": original_title,
+        "year": year,
+        "release_date": release_date,
+    }

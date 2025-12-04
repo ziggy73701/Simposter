@@ -40,11 +40,16 @@ def apply_save_location_variables(template: str, title: str, year: Optional[int]
 
 @router.post("/save")
 def api_save(req: SaveRequest):
+    # Add movie details to options for template variable substitution
+    render_options = dict(req.options or {})
+    render_options["movie_title"] = req.movie_title or ""
+    render_options["movie_year"] = str(req.movie_year) if req.movie_year else ""
+
     img = render_poster_image(
         req.template_id,
         req.background_url,
         req.logo_url,
-        req.options,
+        render_options,
     )
 
     # Get save location template from UI settings

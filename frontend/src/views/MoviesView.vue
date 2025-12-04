@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import MovieGrid from '../components/movies/MovieGrid.vue'
-import BatchEditModal from '../components/BatchEditModal.vue'
 import { useSettingsStore } from '../stores/settings'
 import { useMovies } from '../composables/useMovies'
 
@@ -109,7 +108,6 @@ const sortOrder = ref<'asc' | 'desc'>('asc')
 const filterLabel = ref<string>('')
 const posterCache = posterCacheStore
 const labelCache = labelCacheStore
-const batchEditOpen = ref(false)
 
 const apiBase = import.meta.env.VITE_API_URL || window.location.origin
 const settings = useSettingsStore()
@@ -256,14 +254,6 @@ const handleSelect = (movie: Movie) => {
   emit('select', movie)
 }
 
-const openBatchEdit = () => {
-  batchEditOpen.value = true
-}
-
-const closeBatchEdit = () => {
-  batchEditOpen.value = false
-}
-
 const nextPage = () => {
   if (page.value < totalPages.value) page.value += 1
 }
@@ -312,7 +302,6 @@ onMounted(async () => {
             <option v-for="label in allLabels" :key="label" :value="label">{{ label }}</option>
           </select>
         </div>
-        <button class="btn-batch-edit" @click="openBatchEdit">Batch Send</button>
       </div>
     </div>
     <div v-if="error" class="callout error">
@@ -328,12 +317,6 @@ onMounted(async () => {
         <button @click="nextPage" :disabled="page === totalPages">Next</button>
       </div>
     </div>
-
-    <BatchEditModal
-      :is-open="batchEditOpen"
-      :movies="movies"
-      @close="closeBatchEdit"
-    />
   </div>
 </template>
 
@@ -374,23 +357,6 @@ onMounted(async () => {
   font-size: 13px;
   color: #dce6ff;
   font-weight: 500;
-}
-
-.btn-batch-edit {
-  border: 1px solid rgba(61, 214, 183, 0.4);
-  border-radius: 8px;
-  padding: 7px 12px;
-  background: rgba(61, 214, 183, 0.1);
-  color: #3dd6b7;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-weight: 500;
-}
-
-.btn-batch-edit:hover {
-  background: rgba(61, 214, 183, 0.2);
-  border-color: rgba(61, 214, 183, 0.6);
 }
 
 .control-select {

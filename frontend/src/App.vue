@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import Sidebar from './components/layout/Sidebar.vue'
+import Sidebar, { type MenuItem } from './components/layout/Sidebar.vue'
 import TopNav from './components/layout/TopNav.vue'
 import EditorPane from './components/editor/EditorPane.vue'
 import NotificationContainer from './components/NotificationContainer.vue'
@@ -9,8 +9,14 @@ import { useUiStore, type TabKey } from './stores/ui'
 import { useMovies } from './composables/useMovies'
 import { useSettingsStore } from './stores/settings'
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: 'movies', label: 'Movies' },
+const tabs: MenuItem[] = [
+  {
+    key: 'movies',
+    label: 'Movies',
+    submenu: [
+      { key: 'batch-edit', label: 'Batch Edit' }
+    ]
+  },
   { key: 'settings', label: 'Settings' },
   { key: 'logs', label: 'Logs' }
 ]
@@ -22,7 +28,17 @@ const searchQuery = ref('')
 const { movies } = useMovies()
 const settings = useSettingsStore()
 
-const activeTab = computed<TabKey>(() => (route.name as TabKey) || 'movies')
+const activeTab = computed<TabKey>(() => {
+  // Treat batch-edit as part of movies for sidebar highlighting
+  if (route.name === 'batch-edit') return 'movies'
+  return (route.name as TabKey) || 'movies'
+})
+
+const activeSubmenu = computed<string>(() => {
+  // Return the current route name if it's a submenu route
+  if (route.name === 'batch-edit') return 'batch-edit'
+  return ''
+})
 const showBackButton = computed(() => !!ui.selectedMovie.value)
 
 const handleSelect = (movie: { key: string; title: string; year?: number | string; poster?: string | null }) => {
@@ -34,7 +50,7 @@ const handleSelect = (movie: { key: string; title: string; year?: number | strin
 }
 
 const handleTabSelect = (tab: TabKey) => {
-  // Close editor if open
+  // Always close editor if open
   if (ui.selectedMovie.value) {
     ui.setSelectedMovie(null)
   }
@@ -60,6 +76,18 @@ const handleSearchSelect = (movie: { key: string; title: string; year?: number |
   router.push({ name: 'movies' })
   ui.setSelectedMovie(movie)
 }
+
+const handleSubmenuClick = (parentKey: TabKey, submenuKey: string) => {
+  // Always close editor if open
+  if (ui.selectedMovie.value) {
+    ui.setSelectedMovie(null)
+  }
+
+  if (parentKey === 'movies' && submenuKey === 'batch-edit') {
+    // Navigate to batch edit view
+    router.push({ name: 'batch-edit' })
+  }
+}
 </script>
 
 <template>
@@ -76,7 +104,7 @@ const handleSearchSelect = (movie: { key: string; title: string; year?: number |
 
     <!-- Normal workspace (movies/settings/logs) -->
     <div v-if="!ui.selectedMovie.value" class="workspace">
-      <Sidebar :tabs="tabs" :active="activeTab" @select="handleTabSelect" />
+      <Sidebar :tabs="tabs" :active="activeTab" :active-submenu="activeSubmenu" @select="handleTabSelect" @submenu-click="handleSubmenuClick" />
       <section class="main-pane glass">
         <router-view :key="activeTab" :search="searchQuery" @select="handleSelect" />
       </section>
@@ -84,7 +112,7 @@ const handleSearchSelect = (movie: { key: string; title: string; year?: number |
 
     <!-- Inline editor when a movie is selected -->
     <div v-else class="workspace">
-      <Sidebar :tabs="tabs" :active="activeTab" @select="handleTabSelect" />
+      <Sidebar :tabs="tabs" :active="activeTab" :active-submenu="activeSubmenu" @select="handleTabSelect" @submenu-click="handleSubmenuClick" />
       <section class="main-pane glass">
         <EditorPane :movie="ui.selectedMovie.value" @close="ui.setSelectedMovie(null)" />
       </section>

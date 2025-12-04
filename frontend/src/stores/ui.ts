@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type TabKey = 'movies' | 'settings' | 'logs'
+export type TabKey = 'movies' | 'batch-edit' | 'settings' | 'logs'
 type SelectedMovie = { key: string; title: string; year?: number | string; poster?: string | null } | null
 
 const selectedMovie = ref<SelectedMovie>(null)

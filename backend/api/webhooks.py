@@ -7,7 +7,7 @@ from ..config import (
     get_movie_tmdb_id,
     find_rating_key_by_title_year,
 )
-from ..tmdb_client import get_images_for_movie
+from ..tmdb_client import get_images_for_movie, get_movie_details
 from backend.assets.selection import pick_poster, pick_logo
 from ..rendering import render_poster_image
 from io import BytesIO
@@ -30,13 +30,17 @@ def api_webhook_radarr(template_id: str, preset_id: str, req: RadarrWebhook):
 
     tmdb_id = req.movie.tmdbId
 
-    # 2) Fetch images from TMDb
+    # 2) Fetch images and movie details from TMDb
     imgs = get_images_for_movie(tmdb_id)
     posters = imgs.get("posters", [])
     logos = imgs.get("logos", [])
 
     if not posters:
         raise HTTPException(400, "No posters available from TMDb")
+
+    # Fetch movie details for template variables
+    movie_details = get_movie_details(tmdb_id)
+    logger.debug("[RADARR] Movie details: title='%s' year=%s", movie_details.get("title"), movie_details.get("year"))
 
     # 3) Load preset
     #from ..presets import load_presets  # lazy import
@@ -77,11 +81,16 @@ def api_webhook_radarr(template_id: str, preset_id: str, req: RadarrWebhook):
     logger.info(f"[RADARR] Picked logo   = {logo_url}")
 
     # 4) Render
+    # Add movie details to options for template variable substitution
+    render_options = dict(options)
+    render_options["movie_title"] = movie_details.get("title", "")
+    render_options["movie_year"] = movie_details.get("year", "")
+
     img = render_poster_image(
         template_id,
         poster_url,
         logo_url,
-        options,
+        render_options,
     )
 
     # 5) Upload to Plex (if available)

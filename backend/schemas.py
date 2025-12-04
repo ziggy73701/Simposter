@@ -22,6 +22,8 @@ class PreviewRequest(BaseModel):
     logo_url: Optional[str] = None
     options: Optional[Dict[str, Any]] = None
     preset_id: Optional[str] = None   # <-- MAKE OPTIONAL
+    movie_title: Optional[str] = None
+    movie_year: Optional[int] = None
 
 
 class SaveRequest(PreviewRequest):
@@ -108,6 +110,7 @@ class BatchRequest(BaseModel):
     logo_url: Optional[str] = None
     options: dict
     send_to_plex: bool = False
+    save_locally: bool = False
     labels: List[str] = []
 
 

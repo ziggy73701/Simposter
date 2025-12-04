@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from ..schemas import BatchRequest
 from ..config import settings, plex_remove_label, logger, get_movie_tmdb_id
-from ..tmdb_client import get_images_for_movie
+from ..tmdb_client import get_images_for_movie, get_movie_details
 from ..rendering import render_poster_image
 from io import BytesIO
 import requests
@@ -42,6 +42,10 @@ def api_batch(req: BatchRequest):
                 logo_preference,
             )
 
+            # Fetch movie details for template variables
+            movie_details = get_movie_details(tmdb_id)
+            logger.debug("[BATCH] Movie details: title='%s' year=%s", movie_details.get("title"), movie_details.get("year"))
+
             # ---------------------------
             # Auto-select assets
             # ---------------------------
@@ -59,15 +63,44 @@ def api_batch(req: BatchRequest):
             # ---------------------------
             # Render for EACH MOVIE
             # ---------------------------
+            # Add movie details to options for template variable substitution
+            render_options = dict(req.options)
+            render_options["movie_title"] = movie_details.get("title", "")
+            render_options["movie_year"] = movie_details.get("year", "")
+
             img = render_poster_image(
                 req.template_id,
                 poster_url,
                 logo_url,
-                req.options,
+                render_options,
             )
 
             # ---------------------------
-            # Upload to Plex
+            # Save locally (if requested)
+            # ---------------------------
+            save_path = None
+            if req.save_locally:
+                import os
+                from pathlib import Path
+
+                # Get movie info for filename
+                movie_title = movie_details.get("title", rating_key)
+                movie_year = movie_details.get("year", "")
+
+                # Sanitize filename
+                safe_title = "".join(c for c in movie_title if c.isalnum() or c in " _-()")
+                filename = f"{safe_title} ({movie_year}).jpg" if movie_year else f"{safe_title}.jpg"
+
+                # Save to output directory
+                out_dir = os.path.join(settings.OUTPUT_ROOT, "batch")
+                os.makedirs(out_dir, exist_ok=True)
+                save_path = os.path.join(out_dir, filename)
+
+                img.convert("RGB").save(save_path, "JPEG", quality=95)
+                logger.info(f"[BATCH] Saved locally: {save_path}")
+
+            # ---------------------------
+            # Upload to Plex (if requested)
             # ---------------------------
             if req.send_to_plex:
                 buf = BytesIO()
@@ -88,15 +121,16 @@ def api_batch(req: BatchRequest):
                     plex_remove_label(rating_key, label)
 
                 logger.info(f"[BATCH] Uploaded to Plex: {rating_key}")
-            else:
-                logger.info("[BATCH] Rendered only (no Plex send) rating_key=%s", rating_key)
 
-            results.append({
+            result = {
                 "rating_key": rating_key,
                 "poster_used": poster_url,
                 "logo_used": logo_url,
                 "status": "ok",
-            })
+            }
+            if save_path:
+                result["save_path"] = save_path
+            results.append(result)
 
         except Exception as e:
             logger.error(f"[BATCH] Error for {rating_key}\n{e}")

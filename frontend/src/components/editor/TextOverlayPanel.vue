@@ -60,7 +60,7 @@ const textTransforms = ['none', 'uppercase', 'lowercase', 'capitalize']
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 7V4h16v3M9 20h6M12 4v16"/>
         </svg>
-        Custom Text Overlay
+        Custom Text Overlay (Experimental)
       </div>
       <label class="toggle-switch">
         <input
@@ -85,6 +85,9 @@ const textTransforms = ['none', 'uppercase', 'lowercase', 'capitalize']
             class="text-input"
           />
         </label>
+        <div class="field-hint">
+          Use template variables: {title}, {year}
+        </div>
       </div>
 
       <hr class="mini-divider" />
@@ -529,6 +532,13 @@ input:checked + .toggle-slider:before {
   font-size: 12px;
   font-weight: 500;
   color: #c4cceb;
+}
+
+.field-hint {
+  font-size: 11px;
+  color: rgba(61, 214, 183, 0.7);
+  margin-top: 4px;
+  font-style: italic;
 }
 
 .text-input,

@@ -2,35 +2,56 @@
   <div v-if="isOpen" class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Batch Send to Plex</h2>
+        <h2>Batch Edit</h2>
         <button class="close-btn" @click="closeModal">✕</button>
       </div>
 
       <div class="modal-body">
         <!-- Movies Selection -->
         <div class="section">
-          <h3>Selected Movies ({{ selectedMovies.length }})</h3>
-          <div class="movies-grid">
+          <div class="section-header">
+            <h3>Movies ({{ checkedMovies.size }} of {{ filteredMovies.length }} selected)</h3>
+            <div class="selection-controls">
+              <button class="btn-small" @click="selectAll">Select All</button>
+              <button class="btn-small" @click="deselectAll">Deselect All</button>
+            </div>
+          </div>
+
+          <!-- Filter -->
+          <div class="filter-bar">
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Filter movies..."
+              class="filter-input"
+            />
+          </div>
+
+          <!-- Movies List -->
+          <div class="movies-list">
             <div
-              v-for="movie in selectedMovies"
+              v-for="movie in filteredMovies"
               :key="movie.key"
-              class="movie-item"
+              class="movie-row"
+              :class="{ selected: checkedMovies.has(movie.key) }"
               @click="toggleMovie(movie.key)"
             >
-              <div class="movie-thumbnail">
+              <input
+                type="checkbox"
+                :checked="checkedMovies.has(movie.key)"
+                @click.stop="toggleMovie(movie.key)"
+                class="movie-checkbox"
+              />
+              <div class="movie-thumbnail-small">
                 <img
-                  :src="`/api/movie/${movie.key}/poster?w=80&h=120&v=${Date.now()}`"
+                  :src="`/api/movie/${movie.key}/poster?w=30&h=45`"
                   :alt="movie.title"
+                  loading="lazy"
                 />
               </div>
-              <div class="movie-info">
+              <div class="movie-details">
                 <p class="movie-title">{{ movie.title }}</p>
                 <p class="movie-year">{{ movie.year }}</p>
-                <input
-                  type="checkbox"
-                  :checked="checkedMovies.has(movie.key)"
-                  @change="toggleMovie(movie.key)"
-                />
               </div>
             </div>
           </div>
@@ -61,9 +82,18 @@
           </select>
         </div>
 
-        <!-- Options -->
+        <!-- Action Options -->
         <div class="section">
-          <label>
+          <h3>Actions</h3>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="sendToPlex" />
+            Send to Plex
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="saveLocally" />
+            Save locally
+          </label>
+          <label v-if="sendToPlex" class="checkbox-label sub-option">
             <input type="checkbox" v-model="autoRemoveLabels" />
             Auto-remove old labels after send
           </label>
@@ -74,11 +104,11 @@
         <button class="btn-cancel" @click="closeModal">Cancel</button>
         <button
           class="btn-send"
-          @click="sendBatch"
-          :disabled="checkedMovies.size === 0 || !selectedTemplate || isSending"
+          @click="processBatch"
+          :disabled="checkedMovies.size === 0 || !selectedTemplate || (!sendToPlex && !saveLocally) || isSending"
         >
-          <span v-if="!isSending">Send {{ checkedMovies.size }} Movies</span>
-          <span v-else>Sending...</span>
+          <span v-if="!isSending">Process {{ checkedMovies.size }} Movies</span>
+          <span v-else>Processing...</span>
         </button>
       </div>
 
@@ -129,9 +159,20 @@ const presets = ref<Preset[]>([]);
 const isSending = ref(false);
 const currentIndex = ref(0);
 const autoRemoveLabels = ref(false);
+const sendToPlex = ref(true);
+const saveLocally = ref(false);
+const searchQuery = ref("");
 
-const selectedMovies = computed(() => {
-  return props.movies.filter((m) => checkedMovies.value.has(m.key));
+const filteredMovies = computed(() => {
+  if (!searchQuery.value.trim()) {
+    return props.movies;
+  }
+  const query = searchQuery.value.toLowerCase();
+  return props.movies.filter(
+    (m) =>
+      m.title.toLowerCase().includes(query) ||
+      (m.year && m.year.toString().includes(query))
+  );
 });
 
 const progressPercent = computed(() => {
@@ -162,6 +203,14 @@ const toggleMovie = (key: string) => {
   }
 };
 
+const selectAll = () => {
+  checkedMovies.value = new Set(filteredMovies.value.map((m) => m.key));
+};
+
+const deselectAll = () => {
+  checkedMovies.value.clear();
+};
+
 const closeModal = () => {
   emit("close");
 };
@@ -178,9 +227,14 @@ const loadTemplatesAndPresets = async () => {
   }
 };
 
-const sendBatch = async () => {
+const processBatch = async () => {
   if (checkedMovies.value.size === 0 || !selectedTemplate.value) {
     error("Please select movies and a template");
+    return;
+  }
+
+  if (!sendToPlex.value && !saveLocally.value) {
+    error("Please select at least one action (Send to Plex or Save locally)");
     return;
   }
 
@@ -198,8 +252,9 @@ const sendBatch = async () => {
         poster_filter: "all",
         logo_preference: "first",
       },
-      send_to_plex: true,
-      labels: autoRemoveLabels.value
+      send_to_plex: sendToPlex.value,
+      save_locally: saveLocally.value,
+      labels: autoRemoveLabels.value && sendToPlex.value
         ? ["old_poster", "temp", "edited"] // Common labels to remove
         : [],
     };
@@ -225,13 +280,20 @@ const sendBatch = async () => {
     currentIndex.value = checkedMovies.value.size;
 
     if (!response.ok) {
-      throw new Error("Failed to send batch");
+      throw new Error("Failed to process batch");
     }
 
     await response.json();
-    success(
-      `Successfully sent ${checkedMovies.value.size} movies to Plex!`
-    );
+
+    let message = `Successfully processed ${checkedMovies.value.size} movies`;
+    if (sendToPlex.value && saveLocally.value) {
+      message += " (sent to Plex and saved locally)";
+    } else if (sendToPlex.value) {
+      message += " (sent to Plex)";
+    } else if (saveLocally.value) {
+      message += " (saved locally)";
+    }
+    success(message);
 
     // Reset and close
     setTimeout(() => {
@@ -242,7 +304,7 @@ const sendBatch = async () => {
       selectedPreset.value = "";
     }, 1500);
   } catch (err) {
-    error(`Batch send failed: ${err}`);
+    error(`Batch processing failed: ${err}`);
     console.error(err);
     isSending.value = false;
   }
@@ -266,9 +328,9 @@ const sendBatch = async () => {
 .modal-content {
   background: var(--surface, #1a1f2e);
   border-radius: 8px;
-  max-width: 800px;
-  width: 90%;
-  max-height: 90vh;
+  max-width: 1200px;
+  width: 95%;
+  max-height: 95vh;
   overflow-y: auto;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
@@ -332,72 +394,142 @@ const sendBatch = async () => {
   margin-right: 0.5rem;
 }
 
-.movies-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 1rem;
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 1rem;
 }
 
-.movie-item {
+.selection-controls {
   display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem;
-  border-radius: 6px;
+}
+
+.btn-small {
+  padding: 0.4rem 0.8rem;
   background: var(--surface-alt, #242933);
-  border: 2px solid transparent;
+  color: var(--text-primary, #fff);
+  border: 1px solid var(--border, #2a2f3e);
+  border-radius: 4px;
+  font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.movie-item:hover {
+.btn-small:hover {
+  background: var(--accent, #3dd6b7);
+  color: #000;
   border-color: var(--accent, #3dd6b7);
-  transform: translateY(-2px);
 }
 
-.movie-item.selected {
-  border-color: var(--accent, #3dd6b7);
-  background: var(--surface, #1a1f2e);
+.filter-bar {
+  margin-bottom: 1rem;
 }
 
-.movie-thumbnail {
-  width: 80px;
-  height: 120px;
+.filter-input {
+  width: 100%;
+  padding: 0.6rem;
+  background: var(--input-bg, #242933);
+  color: var(--text-primary, #fff);
+  border: 1px solid var(--border, #2a2f3e);
   border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--accent, #3dd6b7);
+}
+
+.movies-list {
+  max-height: 600px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #2a2f3e);
+  border-radius: 6px;
+  background: var(--surface-alt, #242933);
+}
+
+.movie-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border, #2a2f3e);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.movie-row:last-child {
+  border-bottom: none;
+}
+
+.movie-row:hover {
+  background: rgba(61, 214, 183, 0.05);
+}
+
+.movie-row.selected {
+  background: rgba(61, 214, 183, 0.1);
+  border-left: 3px solid var(--accent, #3dd6b7);
+}
+
+.movie-checkbox {
+  flex-shrink: 0;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent, #3dd6b7);
+}
+
+.movie-thumbnail-small {
+  width: 30px;
+  height: 45px;
+  border-radius: 3px;
   overflow: hidden;
   background: var(--surface, #1a1f2e);
+  flex-shrink: 0;
 }
 
-.movie-thumbnail img {
+.movie-thumbnail-small img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.movie-info {
-  text-align: center;
-  width: 100%;
+.movie-details {
+  flex: 1;
+  min-width: 0;
 }
 
 .movie-title {
   color: var(--text-primary, #fff);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   margin: 0;
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  line-clamp: 2;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
+  font-weight: 500;
 }
 
 .movie-year {
   color: var(--text-secondary, #aaa);
-  font-size: 0.7rem;
-  margin: 0.25rem 0;
+  font-size: 0.75rem;
+  margin: 0.15rem 0 0 0;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-primary, #fff);
+  cursor: pointer;
+}
+
+.checkbox-label.sub-option {
+  margin-left: 1.5rem;
+  color: var(--text-secondary, #aaa);
 }
 
 .form-control {

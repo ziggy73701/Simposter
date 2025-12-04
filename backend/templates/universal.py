@@ -218,6 +218,14 @@ def _render_text_overlay(
     stroke_width = int(options.get("stroke_width", 4))
     stroke_color = _hex_to_rgb(options.get("stroke_color", "#000000"))
 
+    # Replace template variables
+    movie_title = str(options.get("movie_title", ""))
+    movie_year = str(options.get("movie_year", ""))
+
+    text = text.replace("{title}", movie_title)
+    text = text.replace("{year}", movie_year)
+    print(f"[DEBUG] Text after template substitution: '{text}'")
+
     # Apply text transform
     if text_transform == "uppercase":
         text = text.upper()
