@@ -119,12 +119,21 @@ def api_batch(req: BatchRequest):
                 movie_title = movie_details.get("title", rating_key)
                 movie_year = movie_details.get("year", "")
 
+                # Derive folder letter ignoring a leading "The "
+                trimmed_title = movie_title.lstrip()
+                if trimmed_title.lower().startswith("the "):
+                    trimmed_title = trimmed_title[4:]
+                trimmed_title = trimmed_title.lstrip()
+
+                folder_letter = next((c for c in trimmed_title if c.isalpha()), "_")
+                folder_letter = folder_letter.lower() if folder_letter.isalpha() else "_"
+
                 # Sanitize filename
                 safe_title = "".join(c for c in movie_title if c.isalnum() or c in " _-()")
                 filename = f"{safe_title} ({movie_year}).jpg" if movie_year else f"{safe_title}.jpg"
 
                 # Save to output directory
-                out_dir = os.path.join(settings.OUTPUT_ROOT, "batch")
+                out_dir = os.path.join(settings.OUTPUT_ROOT, "batch", folder_letter)
                 os.makedirs(out_dir, exist_ok=True)
                 save_path = os.path.join(out_dir, filename)
 
