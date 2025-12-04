@@ -27,14 +27,30 @@
             />
           </div>
 
+          <div v-if="availableLetters.length > 1" class="scroll-controls">
+            <span class="scroll-label">Jump to</span>
+            <div class="letter-buttons">
+              <button
+                v-for="letter in availableLetters"
+                :key="letter"
+                class="letter-btn"
+                type="button"
+                @click="scrollToLetter(letter)"
+              >
+                {{ letter }}
+              </button>
+            </div>
+          </div>
+
           <!-- Movies List -->
-          <div class="movies-list">
+          <div class="movies-list" ref="moviesListRef">
             <div
-              v-for="movie in filteredMovies"
+              v-for="(movie, idx) in filteredMovies"
               :key="movie.key"
               class="movie-row"
               :class="{ selected: checkedMovies.has(movie.key) }"
               @click="toggleMovie(movie.key)"
+              :ref="(el) => registerLetterAnchor(letterForTitle(movie.title), el, idx)"
             >
               <input
                 type="checkbox"
@@ -127,6 +143,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
+import type { ComponentPublicInstance } from "vue";
 import { useNotification } from "@/composables/useNotification";
 import type { Movie } from "@/services/types";
 
@@ -162,6 +179,8 @@ const autoRemoveLabels = ref(false);
 const sendToPlex = ref(true);
 const saveLocally = ref(false);
 const searchQuery = ref("");
+const moviesListRef = ref<HTMLElement | null>(null);
+const letterAnchors = ref<Record<string, HTMLElement | null>>({});
 
 const filteredMovies = computed(() => {
   if (!searchQuery.value.trim()) {
@@ -173,6 +192,51 @@ const filteredMovies = computed(() => {
       m.title.toLowerCase().includes(query) ||
       (m.year && m.year.toString().includes(query))
   );
+});
+
+const letterForTitle = (title: string) => {
+  const first = (title || "").trim().charAt(0).toUpperCase();
+  return /^[A-Z]$/.test(first) ? first : "#";
+};
+
+const firstLetterIndices = computed(() => {
+  const map = new Map<string, number>();
+  filteredMovies.value.forEach((m, idx) => {
+    const letter = letterForTitle(m.title);
+    if (!map.has(letter)) {
+      map.set(letter, idx);
+    }
+  });
+  return map;
+});
+
+const availableLetters = computed(() => {
+  const letters = new Set<string>();
+  filteredMovies.value.forEach((m) => letters.add(letterForTitle(m.title)));
+  return Array.from(letters).sort();
+});
+
+const registerLetterAnchor = (
+  letter: string,
+  el: Element | ComponentPublicInstance | null,
+  idx: number
+) => {
+  if (!el || !(el instanceof HTMLElement)) return;
+  const firstIndex = firstLetterIndices.value.get(letter);
+  if (firstIndex === idx) {
+    letterAnchors.value = { ...letterAnchors.value, [letter]: el };
+  }
+};
+
+const scrollToLetter = (letter: string) => {
+  const anchor = letterAnchors.value[letter];
+  if (anchor) {
+    anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+};
+
+watch(filteredMovies, () => {
+  letterAnchors.value = {};
 });
 
 const progressPercent = computed(() => {
@@ -425,6 +489,43 @@ const processBatch = async () => {
 
 .filter-bar {
   margin-bottom: 1rem;
+}
+
+.scroll-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  color: var(--text-secondary, #aaa);
+}
+
+.scroll-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.letter-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.letter-btn {
+  background: var(--surface, #1a1f2e);
+  color: var(--text-primary, #fff);
+  border: 1px solid var(--border, #2a2f3e);
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.letter-btn:hover {
+  background: var(--accent, #3dd6b7);
+  color: #000;
+  border-color: var(--accent, #3dd6b7);
 }
 
 .filter-input {
